@@ -1,5 +1,12 @@
 AdminControl
 AdminControl é um sistema básico de controle administrativo para servidores de Counter-Strike 2 (CS2), projetado para facilitar a depuração e o gerenciamento.
+fiz uma pagina Php simples e defacil acesso basta configura o banco de dados da api.php fim bem facil para um pessoa com dificuldade apenas liga e esta funcionando 
+
+<img width="1899" height="1079" alt="image" src="https://github.com/user-attachments/assets/ee47ace9-a8e6-4fa3-b161-7575d8a4296c" />
+
+<img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/ca234267-2ce9-4ef6-bc27-e86a09c51610" />
+
+
 
 Exemplos de Uso dos Comandos
 1. css_ban
