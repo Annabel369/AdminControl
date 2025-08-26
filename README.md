@@ -1,4 +1,4 @@
-AdminControl
+# AdminControl
 AdminControl é um sistema básico de controle administrativo para servidores de Counter-Strike 2 (CS2), projetado para facilitar a depuração e o gerenciamento.
 fiz uma pagina Php simples e defacil acesso basta configura o banco de dados da api.php fim bem facil para um pessoa com dificuldade apenas liga e esta funcionando 
 
