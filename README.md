@@ -1,2 +1,3 @@
-# AdminControl
-cs2 AdminControl Basic for debug basic's
+# vipA
+
+!kills Get count of kills for a player
