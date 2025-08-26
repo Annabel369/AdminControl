@@ -1,77 +1,79 @@
-# AdminControl
-cs2 AdminControl Basic for debug basic's
+AdminControl
+AdminControl é um sistema básico de controle administrativo para servidores de Counter-Strike 2 (CS2), projetado para facilitar a depuração e o gerenciamento.
 
 Exemplos de Uso dos Comandos
 1. css_ban
-Função: Bane um jogador por SteamID64 e um motivo.
+Função: Bane um jogador usando seu SteamID64 e um motivo.
 
 Exemplo:
-
+```
 css_ban 76561198123456789 "Uso de hack"
-      76561198123456789: O SteamID64 do jogador a ser banido.
+```
 
-      "Uso de hack": O motivo do banimento. Use aspas se o motivo tiver mais de uma palavra.
+76561198123456789: O SteamID64 do jogador a ser banido.
+
+"Uso de hack": O motivo do banimento. Use aspas se o motivo contiver mais de uma palavra.
 
 2. css_unban
-      Função: Desbane um jogador banido.
+Função: Desbane um jogador que está banido.
 
-      Exemplo:
+Exemplo:
+```
+css_unban 76561198123456789
+```
 
-      css_unban 76561198123456789
-   
-      3. css_listbans
-      4. 
-      Função: Lista todos os jogadores banidos que estão no banco de dados.
+3. css_listbans
+Função: Lista todos os jogadores banidos que estão no banco de dados.
 
-      Exemplo:
+Exemplo:
+```
+css_listbans
+```
 
-      css_listbans
-   
-      Este comando vai exibir no console do servidor uma lista com o SteamID, motivo e data de cada banimento ativo.
+Este comando exibirá no console do servidor uma lista com o SteamID, motivo e data de cada banimento ativo.
 
 4. css_rcon
 Função: Executa um comando RCON.
 
-Exemplo:
+Exemplos:
 
+Comando Simples:
+```
 css_rcon sv_cheats 1
-Este comando executaria sv_cheats 1 no console do servidor.
+```
 
-Você também pode usá-lo para comandos de várias palavras:
-
+Comando com Múltiplas Palavras:
+```
 css_rcon say "Olá a todos!"
+```
 
 5. css_admin
-   
 Função: Concede um admin básico a um jogador.
 
 Exemplo:
-
+```
 css_admin 76561198906880449
+```
 
-Isto adicionaria o SteamID 76561198906880449 à tabela de admins com permissões básicas.
+Isto adicionará o SteamID 76561198906880449 à tabela de admins com permissões básicas.
 
 6. css_removeadmin
-
-   
 Função: Remove um jogador da lista de administradores.
 
 Exemplo:
-
+```
 css_removeadmin 76561198906880449
-
+```
 
 7. css_addadmin
-
-   
 Função: Concede um admin personalizado com nome, permissão, nível e duração.
 
 Exemplos:
 
 Admin Customizado (com tempo):
-
+```
 css_addadmin 76561198906880449 Katara @css/custom-permission 40 40000
-
+```
 
 76561198906880449: SteamID64 do admin.
 
@@ -84,8 +86,10 @@ Katara: O nome do admin.
 40000: Duração em minutos.
 
 Admin Master:
-
+```
 css_addadmin 76561199737411180 Astral2 @css/root 99 99999
+```
+
 @css/root: Geralmente significa permissão total.
 
 99: Um nível alto.
