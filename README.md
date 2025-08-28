@@ -43,6 +43,52 @@ configure o plugin e o api.php
       "ConfigVersion": 1
     }
 
+Sim, essa configuração é perfeita para um servidor de comunidade, e você está no caminho certo.
+
+A principal melhoria em relação ao seu código anterior é que agora você está carregando os dois arquivos de banimento nativos:
+
+exec banned_ip.cfg: Carrega a lista de banimentos por IP.
+
+exec banned_user.cfg: Carrega a lista de banimentos por SteamID.
+
+Isso garante que todos os banimentos, tanto por IP quanto por SteamID, sejam carregados corretamente no servidor quando ele for iniciado.
+
+Manter esses dois comandos na sua server.cfg é a forma padrão e mais robusta de garantir que os banimentos sejam permanentes, mesmo após o servidor ser reiniciado.
+
+exemplo 
+
+        // Defaults in server_default.cfg
+            hostname "[CS2]ASTRAL SERVER SKINS | KNIFE | WS | VIPNIGHT | RANKED"     // Server name
+            sv_lan "0"            // Show online 0 modo online ou 1 se você estiver testando em rede local, pode tentar temporariamente
+            sv_region "2"           // Set region (255 is worldwide)
+            rcon_password "GZPWA3PyZ7zonPf"
+
+            rcon_port "27515"
+            sv_rcon_banpenalty "0"
+            sv_rcon_maxfailures "10"
+
+            sv_maxrate "0"          
+            sv_minrate "0"           
+            sv_parallel_sendsnapshot "1"       // Enables multi-threading.
+            sv_clockcorrection_msecs "15"       // The server tries to keep each players m_nTickBase withing this many msecs of the server absolute tickcount
+            sv_hibernate_when_empty "0"        // Puts the server into extremely low CPU usage mode when no clients connected
+
+            mp_endmatch_votenextmap "1"
+            mp_match_end_changelevel "1"
+            mp_match_end_restart "0"
+            bot_quota "0"
+
+            mp_autoteambalance = true
+            mp_humanteam = any
+            mp_limitteams = 2
+
+            sv_alltalk "1"
+            sv_talk_enemy_dead "0"
+            sv_talk_enemy_living "0"
+
+            exec banned_ip.cfg
+            exec banned_user.cfg
+
 
 Exemplos de Uso dos Comandos
 1. css_ban
@@ -138,3 +184,43 @@ css_addadmin 76561199737411180 Astral2 @css/root 99 99999
 99: Um nível alto.
 
 99999: Uma duração muito longa (quase permanente).
+
+
+Adições ao Tutorial
+Comandos de Chat (Para o Jogo)
+Os comandos de chat são a forma mais prática de usar o plugin enquanto se está jogando. Adicionar essa seção vai ajudar os admins a usar as funcionalidades rapidamente.
+
+!ban <nome do jogador> [motivo]: Bane um jogador por nome (por SteamID).
+Exemplo: !ban Amauri Cheater
+
+!unban <nome do jogador>: Desbane um jogador por nome (por SteamID).
+Exemplo: !unban Amauri
+
+!ipban <nome do jogador> [motivo]: Bane um jogador por nome, mas o banimento é pelo IP.
+Exemplo: !ipban "Astral ツ" Abuso
+
+!unbanip <nome do jogador>: Desbane um jogador por nome (o banimento é pelo IP).
+Exemplo: !unbanip "Astral ツ"
+
+!admin <nome do jogador>: Concede admin básico a um jogador por nome.
+Exemplo: !admin Amauri
+
+!removeadm <nome do jogador>: Remove admin de um jogador por nome.
+Exemplo: !removeadm Amauri
+
+!status: Exibe o seu próprio status de banimento (se você está banido e o motivo).
+Exemplo: !status
+
+Comandos de Banimento por IP (Console)
+Você já tem a seção css_ban. Agora, inclua os comandos para banimento por IP para mostrar a diferença entre eles.
+
+css_ipban <endereço IP> [motivo]: Bane um jogador diretamente pelo endereço IP.
+Exemplo: css_ipban 100.72.51.124 "Uso de proxy"
+
+css_unbanip <endereço IP>: Desbane um IP.
+Exemplo: css_unbanip 100.72.51.124
+
+Dica Rápida:
+Adicione uma nota no final sobre a importância de usar aspas (") em nomes ou motivos com espaços. Isso é uma dica de ouro para qualquer administrador de servidor.
+
+Exemplo: Use !ban "Nome com Espaço" "Motivo com Várias Palavras"
