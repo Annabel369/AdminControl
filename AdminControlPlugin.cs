@@ -1,15 +1,21 @@
-﻿using CounterStrikeSharp.API;
+﻿using AdminControlPlugin.commands;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API.ValveConstants.Protobuf;
+using CS2MenuManager.API;
+using CS2MenuManager.API.Menu;
 using Dapper;
 using MySqlConnector;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using Timer = System.Timers.Timer;
 
 namespace AdminControlPlugin;
@@ -18,7 +24,7 @@ namespace AdminControlPlugin;
 public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.AdminControlConfig>
 {
     public override string ModuleName => "Admin Control with MySQL & CFG Sync";
-    public override string ModuleVersion => "11.1.0"; // Versão atualizada
+    public override string ModuleVersion => "12.0.0"; // Versão Super Legal
     public override string ModuleAuthor => "Amauri Bueno dos Santos & Gemini";
     public override string ModuleDescription => "Plugin completo para banimentos, admins e RCON com MySQL e sincronização com arquivos de configuração nativos do servidor.";
 
@@ -32,6 +38,8 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
     private Dictionary<ulong, string> _banReasons = new Dictionary<ulong, string>();
     private Dictionary<string, string> _ipBanReasons = new Dictionary<string, string>();
 
+    // Instância da nova classe de comandos de jogador
+    private PlayerCommand? _playerCommand;
 
     public void OnConfigParsed(AdminControlConfig config)
     {
@@ -91,53 +99,58 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
 
     public class IpBanEntry
     {
-        public string? ip_address { get; set; }
+        public string ip_address { get; set; } = string.Empty;
+        public string reason { get; set; } = string.Empty;
+        public DateTime timestamp { get; set; }
+    }
+
+    public class MuteEntry
+    {
+        public ulong steamid { get; set; }
         public string? reason { get; set; }
         public DateTime timestamp { get; set; }
+        public bool unmuted { get; set; }
     }
 
     public override void Load(bool hotReload)
     {
         try
         {
+            // Inicializa a classe de comandos
+            _playerCommand = new PlayerCommand(this);
+
             // Eventos e listeners
-            RegisterEventHandler<EventPlayerConnect>(OnPlayerConnectCheckBan);
-            RegisterListener<Listeners.OnClientConnect>(HandleClientConnect);
             RegisterListener<Listeners.OnMapStart>(OnMapStart);
-            RegisterEventHandler<EventPlayerSpawn>(OnPlayerSpawnCheckBan);
-
-
-            // Inicialização de arquivos compartilhados
-            EnsureSharedConfigFilesExist();
+            RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFullCheckBan);
 
             // Inicialização assíncrona segura
             Task.Run(async () =>
             {
                 await EnsureDatabaseAndTablesExistAsync();
                 await GenerateAdminsJsonAsync();
-                await LoadBansFromDatabaseAsync(); // Carrega banimentos no início
+                await LoadBansFromDatabaseAsync();
             }).GetAwaiter().GetResult();
 
-            // Comandos administrativos
+            // Comandos de Console (mantidos aqui)
             AddCommand("css_ban", "Ban a player by SteamID64", BanPlayer);
             AddCommand("css_unban", "Unban a player by SteamID64", UnbanPlayer);
             AddCommand("css_ipban", "Ban a player by IP Address", IpBanPlayer);
             AddCommand("css_unbanip", "Unban a player by IP Address", UnbanIpPlayer);
             AddCommand("css_listbans", "List all banned players", ListBans);
             AddCommand("css_rcon", "Execute RCON command", ExecuteRcon);
-            AddCommand("css_admin", "Grant basic admin", GrantBasicAdmin);
-            AddCommand("css_removeadmin", "Remove admin", RemoveAdmin);
             AddCommand("css_addadmin", "Grant custom admin with permission and duration", GrantCustomAdmin);
             AddCommand("css_reloadadmins", "Reloads admins from the database", ReloadAdminsCommand);
+            AddCommand("css_unmute", "Desmuta um jogador pelo SteamID", UnmutePlayerCommand);
+            AddCommand("css_mute", "Muta um jogador por nome ou SteamID", MutePlayerCommand);
 
-            // Comandos via chat
-            AddCommand("!ban", "Ban a player by name", ChatBanPlayer);
-            AddCommand("!unban", "Unban a player by name", ChatUnbanPlayer);
-            AddCommand("!ipban", "Ban a player by name (IP Ban)", ChatIpBanPlayer);
-            AddCommand("!unbanip", "Unban a player by name (IP Unban)", ChatUnbanIpPlayer);
-            AddCommand("!admin", "Grant basic admin to a player by name", ChatGrantBasicAdmin);
-            AddCommand("!removeadm", "Remove admin from a player by name", ChatRemoveAdmin);
-            AddCommand("!status", "Check ban status", ChatCheckStatus);
+            // Novos comandos para abrir o menu
+            AddCommand("css_menu", "Abre o menu de admins e banidos", OpenMenuCommand);
+            AddCommand("!adminmenu", "Abre o menu de admins e banidos", OpenMenuChatCommand);
+            AddCommand("/adminmenu", "Abre o menu", OpenMenuChatCommand);
+
+            AddCommand("!kick", "Kicka um jogador", KickCommand);
+            AddCommand("!mute", "Muta um jogador", MuteCommand);
+            AddCommand("!swapteam", "Move jogador para o outro time", SwapTeamCommand);
 
             // Timer de verificação de admins
             StartAdminCheckTimer();
@@ -150,49 +163,40 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-    private void HandleClientConnect(int playerSlot, string name, string ipAddress)
-    {
-        var player = Utilities.GetPlayerFromSlot(playerSlot);
-        if (player == null || !player.IsValid || player.AuthorizedSteamID == null)
-            return;
-
-        ulong steamId = player.AuthorizedSteamID.SteamId64;
-        string ip = ipAddress ?? "desconhecido";
-
-        Console.WriteLine($"[BanCheck] Jogador {name} ({steamId}) tentou entrar com IP {ip}");
-
-        if (_bannedPlayers.Contains(steamId))
-        {
-            string reason = _banReasons.TryGetValue(steamId, out var r) ? r : "Banido";
-            Console.WriteLine($"[BanCheck] BANIDO por SteamID: {reason}");
-
-            if (player.UserId >= 0)
-                Server.ExecuteCommand($"kickid {player.UserId} \"{reason}\"");
-            else
-                Console.WriteLine($"[BanCheck] Falha ao expulsar {name} — UserId inválido.");
-
-            return;
-        }
-
-        if (_bannedIps.Contains(ip))
-        {
-            string reason = _ipBanReasons.TryGetValue(ip, out var r) ? r : "Banido por IP";
-            Console.WriteLine($"[BanCheck] BANIDO por IP: {reason}");
-
-            if (player.UserId >= 0)
-                Server.ExecuteCommand($"kickid {player.UserId} \"{reason}\"");
-            else
-                Console.WriteLine($"[BanCheck] Falha ao expulsar {name} — UserId inválido.");
-        }
-    }
-
-
-
     public override void Unload(bool hotReload)
     {
         _adminCheckTimer?.Stop();
         _adminCheckTimer?.Dispose();
         Console.WriteLine("[AdminControlPlugin] Plugin descarregado.");
+    }
+
+    public HookResult OnPlayerConnectFullCheckBan(EventPlayerConnectFull @event, GameEventInfo info)
+    {
+        var player = @event.Userid;
+
+        if (player == null || !player.IsValid || player.IsBot)
+        {
+            return HookResult.Continue;
+        }
+
+        ulong steamId = player.AuthorizedSteamID!.SteamId64;
+        string ip = player.IpAddress ?? "desconhecido";
+
+        if (_bannedPlayers.Contains(steamId))
+        {
+            string reason = _banReasons.TryGetValue(steamId, out var r) ? r : "Banido";
+            Server.ExecuteCommand($"kickid {player.UserId} \"You have been banned from this server! Reason: {reason}\"");
+            return HookResult.Stop;
+        }
+
+        else if (_bannedIps.Contains(ip))
+        {
+            string reason = _ipBanReasons.TryGetValue(ip, out var r) ? r : "Banido por IP";
+            Server.ExecuteCommand($"kickid {player.UserId} \"Your IP has been banned from this server! Reason: {reason}\"");
+            return HookResult.Stop;
+        }
+
+        return HookResult.Continue;
     }
 
     private void StartAdminCheckTimer()
@@ -203,7 +207,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         _adminCheckTimer.Start();
     }
 
-    private async Task<MySqlConnection> GetOpenConnectionAsync()
+    public async Task<MySqlConnection> GetOpenConnectionAsync()
     {
         var connection = new MySqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -218,34 +222,49 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         await connection.ExecuteAsync($"CREATE DATABASE IF NOT EXISTS `{Config.Database}`;");
         await connection.ChangeDatabaseAsync(Config.Database);
         await connection.ExecuteAsync(@"
-            CREATE TABLE IF NOT EXISTS bans (
-                steamid BIGINT UNSIGNED NOT NULL,
-                reason VARCHAR(255),
-                timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                unbanned BOOLEAN NOT NULL DEFAULT FALSE,
-                PRIMARY KEY (steamid)
-            );
-            CREATE TABLE IF NOT EXISTS ip_bans (
-                ip_address VARCHAR(16) NOT NULL,
-                reason VARCHAR(255),
-                timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                unbanned BOOLEAN NOT NULL DEFAULT FALSE,
-                PRIMARY KEY (ip_address)
-            );
-            CREATE TABLE IF NOT EXISTS admins (
-                steamid BIGINT UNSIGNED NOT NULL,
-                name VARCHAR(64),
-                permission VARCHAR(64),
-                level INT NOT NULL,
-                expires_at DATETIME,
-                granted_by BIGINT UNSIGNED,
-                timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (steamid)
-            );
+        CREATE TABLE IF NOT EXISTS bans (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            steamid BIGINT UNSIGNED NOT NULL,
+            reason VARCHAR(255),
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            unbanned BOOLEAN NOT NULL DEFAULT FALSE,
+            PRIMARY KEY (id),
+            INDEX idx_steamid (steamid)
+        );
+        CREATE TABLE IF NOT EXISTS ip_bans (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            ip_address VARCHAR(45) NOT NULL,
+            reason VARCHAR(255),
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            unbanned BOOLEAN NOT NULL DEFAULT FALSE,
+            PRIMARY KEY (id),
+            INDEX idx_ip (ip_address)
+        );
+        CREATE TABLE IF NOT EXISTS admins (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            steamid BIGINT UNSIGNED NOT NULL,
+            name VARCHAR(64),
+            permission VARCHAR(64),
+            level INT NOT NULL,
+            expires_at DATETIME,
+            granted_by BIGINT UNSIGNED,
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            INDEX idx_admin_steamid (steamid)
+        );
+        CREATE TABLE IF NOT EXISTS mutes (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            steamid BIGINT UNSIGNED NOT NULL,
+            reason VARCHAR(255),
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            unmuted BOOLEAN NOT NULL DEFAULT FALSE,
+            PRIMARY KEY (id),
+            INDEX idx_mute_steamid (steamid)
+        );
         ");
     }
 
-    private async Task GenerateAdminsJsonAsync()
+    public async Task GenerateAdminsJsonAsync()
     {
         try
         {
@@ -276,79 +295,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-    private HookResult OnPlayerSpawnCheckBan(EventPlayerSpawn @event, GameEventInfo info)
-    {
-        var player = @event.Userid;
-        if (player == null || !player.IsValid || player.AuthorizedSteamID == null)
-            return HookResult.Continue;
-
-        ulong steamId = player.AuthorizedSteamID.SteamId64;
-        string ip = player.IpAddress ?? "desconhecido";
-        string name = player.PlayerName;
-
-        Console.WriteLine($"[BanCheck] Jogador {name} ({steamId}) spawnou com IP {ip}");
-
-        Task.Delay(500).ContinueWith(_ =>
-        {
-            Server.NextFrame(() =>
-            {
-                string? reason = null;
-                bool isBan = false;
-
-                if (_bannedPlayers.Contains(steamId))
-                {
-                    reason = _banReasons.TryGetValue(steamId, out var r) ? r : "Banido";
-                    Console.WriteLine($"[BanCheck] BANIDO por SteamID: {reason}");
-                    isBan = true;
-                }
-                else if (_bannedIps.Contains(ip))
-                {
-                    reason = _ipBanReasons.TryGetValue(ip, out var r) ? r : "Banido por IP";
-                    Console.WriteLine($"[BanCheck] BANIDO por IP: {reason}");
-                    isBan = true;
-                }
-
-                if (isBan && reason != null)
-                {
-                    // Expulsar jogador
-                    if (player.UserId >= 0)
-                        Server.ExecuteCommand($"kickid {player.UserId} \"{reason}\"");
-                    else
-                        Console.WriteLine($"[BanCheck] Falha ao expulsar {name} — UserId inválido.");
-
-                    // Notificar admins conectados
-                    foreach (var p in Utilities.GetPlayers())
-                    {
-                        if (p != null && p.IsValid && p.AuthorizedSteamID != null)
-                        {
-                            var adminData = AdminManager.GetPlayerAdminData(p);
-                            if (adminData != null && adminData.Flags.Any(flag => Config != null && Config.RequiredFlags.Any(flag => Config.RequiredFlags.Contains(flag))))
-                            {
-                                p.PrintToChat($"⚠️ Jogador {name} ({steamId}) foi expulso por banimento: {reason}");
-                            }
-                        }
-                    }
-
-                    // Registrar tentativa em arquivo
-                    try
-                    {
-                        string logPath = Path.Combine(Server.GameDirectory, "csgo/logs/ban_attempts.log");
-                        string logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Jogador {name} ({steamId}) tentou entrar com IP {ip} — Motivo: {reason}\n";
-                        File.AppendAllText(logPath, logEntry);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[BanCheck] Falha ao registrar log de banimento: {ex.Message}");
-                    }
-                }
-            });
-        });
-
-        return HookResult.Continue;
-    }
-
-
-
     private async Task RemoveExpiredAdminsAsync()
     {
         try
@@ -375,7 +321,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             var steamBans = await connection.QueryAsync<BanEntry>("SELECT steamid, reason FROM bans WHERE unbanned = FALSE;");
             var ipBans = await connection.QueryAsync<IpBanEntry>("SELECT ip_address, reason FROM ip_bans WHERE unbanned = FALSE;");
 
-            // Limpa o cache antes de recarregar
             _bannedPlayers.Clear();
             _bannedIps.Clear();
             _banReasons.Clear();
@@ -403,83 +348,128 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-    public HookResult OnClientConnect(int playerSlot)
-    {
-        var player = Utilities.GetPlayerFromSlot(playerSlot);
-
-        if (player?.AuthorizedSteamID == null || !player.AuthorizedSteamID.IsValid())
-        {
-            return HookResult.Continue;
-        }
-
-        var steamId = player.AuthorizedSteamID.SteamId64;
-        var ipAddress = player.IpAddress;
-
-        // **VERIFICAÇÃO OTIMIZADA COM CACHE NA MEMÓRIA**
-        // Primeiro, checa o cache de SteamID
-        if (_bannedPlayers.Contains(steamId))
-        {
-            var banReason = _banReasons.GetValueOrDefault(steamId, "Banned by SteamID");
-            Server.NextFrame(() =>
-            {
-                Server.ExecuteCommand($"kickid {player.UserId} \"You've been banned from the server! Reason: {banReason}\"");
-            });
-            return HookResult.Stop;
-        }
-
-        // Se não estiver banido por SteamID, checa o cache de IP
-        if (ipAddress != null && _bannedIps.Contains(ipAddress))
-        {
-            var ipBanReason = _ipBanReasons.GetValueOrDefault(ipAddress, "Banned by IP");
-            Server.NextFrame(() =>
-            {
-                Server.ExecuteCommand($"kickid {player.UserId} \"You've been banned from the server! Reason: {ipBanReason}\"");
-            });
-            return HookResult.Stop;
-        }
-
-        // Se não estiver no cache, faz uma consulta rápida no banco para o caso de um novo banimento
-        Task.Run(async () => {
-            var banReason = await GetClientBanReasonAsync(steamId);
-            var ipBanReason = await GetClientIpBanReasonAsync(ipAddress);
-
-            Server.NextFrame(() =>
-            {
-                if (banReason != null)
-                {
-                    // Adiciona ao cache
-                    _bannedPlayers.Add(steamId);
-                    _banReasons[steamId] = banReason;
-                    Server.ExecuteCommand($"kickid {player.UserId} \"You've been banned from the server! Reason: {banReason}\"");
-                }
-                else if (ipBanReason != null)
-                {
-                    // Adiciona ao cache
-                    if (ipAddress != null)
-                    {
-                        _bannedIps.Add(ipAddress);
-                        _ipBanReasons[ipAddress] = ipBanReason;
-                    }
-                    Server.ExecuteCommand($"kickid {player.UserId} \"You've been banned from the server! Reason: {ipBanReason}\"");
-                }
-            });
-        });
-
-        return HookResult.Continue;
-    }
-
     public void OnMapStart(string mapName)
     {
         Task.Run(async () =>
         {
             await GenerateAdminsJsonAsync();
-            await LoadBansFromDatabaseAsync(); // Recarrega o cache de banimentos ao mudar de mapa
+            await LoadBansFromDatabaseAsync();
         });
         Server.ExecuteCommand("exec banned_user.cfg");
         Server.ExecuteCommand("exec banned_ip.cfg");
     }
 
-    private CCSPlayerController? FindPlayerByName(CCSPlayerController? caller, string name)
+    public void HandleMute(CCSPlayerController? caller, ulong steamId, string reason)
+    {
+        Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+
+            // Insere novo registro de mute (histórico)
+            await connection.ExecuteAsync(@"
+            INSERT INTO mutes (steamid, reason)
+            VALUES (@SteamId, @Reason);",
+                new { SteamId = steamId, Reason = reason });
+
+        },
+        $"✅ Jogador {steamId} mutado. Motivo: {reason}",
+        "❌ Erro ao mutar o jogador."));
+    }
+
+    public void HandleUnmute(CCSPlayerController? caller, ulong steamId)
+    {
+        Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+
+            // Marca todos os mutes ativos desse SteamID como desmutados
+            await connection.ExecuteAsync(@"
+            UPDATE mutes 
+            SET unmuted = TRUE 
+            WHERE steamid = @SteamId AND unmuted = FALSE;",
+                new { SteamId = steamId });
+
+            caller?.PrintToChat($"✅ Jogador {steamId} desmutado.");
+            Console.WriteLine($"[AdminControlPlugin] Admin {caller?.PlayerName} desmutou o jogador {steamId}.");
+        },
+        $"✅ Jogador {steamId} desmutado.",
+        "❌ Erro ao desmutar o jogador."));
+    }
+
+
+    public void KickCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (caller == null || info.ArgCount < 1) return;
+
+        var targetName = info.GetArg(0);
+        var target = Utilities.GetPlayers()
+            .FirstOrDefault(p => p.IsValid && p.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase));
+
+        if (target != null)
+        {
+            Server.ExecuteCommand($"kick \"{target.PlayerName}\"");
+            caller.PrintToChat($"✅ {target.PlayerName} foi kickado.");
+        }
+        else
+        {
+            caller.PrintToChat("❌ Jogador não encontrado.");
+        }
+    }
+
+    public void MuteCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (caller == null || info.ArgCount < 1) return;
+
+        var targetName = info.GetArg(0);
+        var target = Utilities.GetPlayers()
+            .FirstOrDefault(p => p.IsValid && p.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase));
+
+        if (target != null)
+        {
+            var steamId = target.AuthorizedSteamID!.SteamId64;
+            var reason = info.ArgCount > 1
+                ? string.Join(" ", Enumerable.Range(1, info.ArgCount - 1).Select(i => info.GetArg(i)))
+                : "Mute from command";
+
+            // Muta o jogador no jogo
+            target.VoiceFlags = 0;
+            caller.PrintToChat($"🔇 {target.PlayerName} foi mutado.");
+
+            // Registra no banco de dados (novo registro sempre)
+            Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
+            {
+                using var connection = await GetOpenConnectionAsync();
+                await connection.ExecuteAsync(@"
+                INSERT INTO mutes (steamid, reason)
+                VALUES (@SteamId, @Reason);",
+                    new { SteamId = steamId, Reason = reason });
+
+            }, $"✅ Jogador {target.PlayerName} mutado. Motivo: {reason}",
+               "❌ Erro ao mutar o jogador."));
+        }
+        else
+        {
+            caller?.PrintToChat("❌ Jogador não encontrado.");
+        }
+    }
+
+
+    
+
+    public void SwapTeamCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (caller == null || info.ArgCount < 1) return;
+        var targetName = info.GetArg(0);
+        var target = Utilities.GetPlayers().FirstOrDefault(p => p.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase));
+        if (target != null)
+        {
+            var newTeam = target.Team == CsTeam.Terrorist ? CsTeam.CounterTerrorist : CsTeam.Terrorist;
+            target.SwitchTeam(newTeam);
+            caller.PrintToChat($"🔄 {target.PlayerName} foi movido para o time {newTeam}.");
+        }
+    }
+
+    public CCSPlayerController? FindPlayerByName(CCSPlayerController? caller, string name)
     {
         var players = Utilities.GetPlayers()
             .Where(p => p.IsValid && p.PlayerName.Contains(name, StringComparison.OrdinalIgnoreCase))
@@ -506,7 +496,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         return null;
     }
 
-    private bool HasRequiredFlags(CCSPlayerController caller)
+    public bool HasRequiredFlags(CCSPlayerController caller)
     {
         if (caller == null || !caller.IsValid) return false;
         foreach (var flag in Config.RequiredFlags)
@@ -519,7 +509,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         return false;
     }
 
-    private async Task<string?> GetClientBanReasonAsync(ulong steamId)
+    public async Task<string?> GetClientBanReasonAsync(ulong steamId)
     {
         try
         {
@@ -536,7 +526,8 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-    private async Task<string?> GetClientIpBanReasonAsync(string? ipAddress)
+
+    public async Task<string?> GetClientIpBanReasonAsyncIP(string? ipAddress)
     {
         if (string.IsNullOrEmpty(ipAddress)) return null;
 
@@ -555,52 +546,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-    private HookResult OnPlayerConnectCheckBan(EventPlayerConnect @event, GameEventInfo info)
-    {
-        var player = @event.Userid;
-
-        if (player == null || !player.IsValid || player.AuthorizedSteamID == null)
-            return HookResult.Continue;
-
-        ulong steamId = player.AuthorizedSteamID.SteamId64;
-
-        string ip = player.IpAddress ?? string.Empty;
-
-        // Executa verificação assíncrona
-        Task.Run(async () =>
-        {
-            using var connection = await GetOpenConnectionAsync();
-
-            // Verifica banimento por SteamID
-            var ban = await connection.QueryFirstOrDefaultAsync<BanEntry>(
-                "SELECT steamid, reason FROM bans WHERE steamid = @SteamId",
-                new { SteamId = steamId });
-
-            if (ban != null)
-            {
-                string reason = string.IsNullOrEmpty(ban.reason) ? "Banido" : ban.reason;
-                Server.ExecuteCommand($"kickid {player.UserId} \"{reason}\"");
-                return;
-            }
-
-            // Verifica banimento por IP
-            var ipBan = await connection.QueryFirstOrDefaultAsync<BanEntry>(
-                "SELECT steamid, reason FROM bans WHERE ip = @IpAddress",
-                new { IpAddress = ip });
-
-            if (ipBan != null)
-            {
-                string reason = string.IsNullOrEmpty(ipBan.reason) ? "Banido por IP" : ipBan.reason;
-                Server.ExecuteCommand($"kickid {player.UserId} \"{reason}\"");
-            }
-        });
-
-        return HookResult.Continue;
-    }
-
-
-
-    private async Task ExecuteDbActionAsync(CCSPlayerController? caller, Func<Task> action, string successMessage, string errorMessage)
+    public async Task ExecuteDbActionAsync(CCSPlayerController? caller, Func<Task> action, string successMessage, string errorMessage)
     {
         try
         {
@@ -614,9 +560,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-    // --- Lógica de Banimento por SteamID ---
-
-    private void HandleBan(CCSPlayerController? caller, ulong steamId, string reason)
+    public void HandleBan(CCSPlayerController? caller, ulong steamId, string reason)
     {
         Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
         {
@@ -626,7 +570,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
                 ON DUPLICATE KEY UPDATE reason = @Reason, unbanned = FALSE, timestamp = CURRENT_TIMESTAMP;",
                 new { SteamId = steamId, Reason = reason });
 
-            // Adiciona ao cache
             _bannedPlayers.Add(steamId);
             _banReasons[steamId] = reason;
 
@@ -644,7 +587,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }, $"✅ Jogador {steamId} banido. Motivo: {reason}", "❌ Erro ao banir o jogador."));
     }
 
-    private void HandleUnban(CCSPlayerController? caller, ulong steamId)
+    public void HandleUnban(CCSPlayerController? caller, ulong steamId)
     {
         Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
         {
@@ -652,7 +595,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             await connection.ExecuteAsync("UPDATE bans SET unbanned = TRUE WHERE steamid = @SteamId;",
                 new { SteamId = steamId });
 
-            // Remove do cache
             _bannedPlayers.Remove(steamId);
             _banReasons.Remove(steamId);
 
@@ -664,19 +606,18 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }, $"✅ Jogador {steamId} desbanido.", "❌ Erro ao desbanir o jogador."));
     }
 
-    // --- Lógica de Banimento por IP ---
-
-    private void HandleIpBan(CCSPlayerController? caller, string ipAddress, string reason)
+    public void HandleIpBan(CCSPlayerController? caller, string ipAddress, string reason)
     {
         Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
         {
             using var connection = await GetOpenConnectionAsync();
+
+            // Insere novo registro de ban por IP
             await connection.ExecuteAsync(@"
-                INSERT INTO ip_bans (ip_address, reason) VALUES (@IpAddress, @Reason)
-                ON DUPLICATE KEY UPDATE reason = @Reason, unbanned = FALSE, timestamp = CURRENT_TIMESTAMP;",
+            INSERT INTO ip_bans (ip_address, reason) 
+            VALUES (@IpAddress, @Reason);",
                 new { IpAddress = ipAddress, Reason = reason });
 
-            // Adiciona ao cache
             _bannedIps.Add(ipAddress);
             _ipBanReasons[ipAddress] = reason;
 
@@ -685,37 +626,126 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
                 Server.ExecuteCommand($"banip 0 {ipAddress}");
                 Server.ExecuteCommand($"writeip");
 
-                var playerToKick = Utilities.GetPlayers().FirstOrDefault(p => p.IpAddress == ipAddress);
+                var playerToKick = Utilities.GetPlayers()
+                    .FirstOrDefault(p => p.IpAddress == ipAddress);
+
                 if (playerToKick != null)
                 {
                     Server.ExecuteCommand($"kickid {playerToKick.UserId} \"You've been banned from the server! Reason: {reason}\"");
                 }
             });
-        }, $"✅ IP {ipAddress} banido. Motivo: {reason}", "❌ Erro ao banir o IP."));
+        },
+        $"✅ IP {ipAddress} banido. Motivo: {reason}",
+        "❌ Erro ao banir o IP."));
     }
 
-    private void HandleUnbanIp(CCSPlayerController? caller, string ipAddress)
+    public void HandleUnbanIp(CCSPlayerController? caller, string ipAddress)
     {
         Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
         {
             using var connection = await GetOpenConnectionAsync();
-            await connection.ExecuteAsync("UPDATE ip_bans SET unbanned = TRUE WHERE ip_address = @IpAddress;",
+
+            // Marca todos os bans ativos desse IP como desbanidos
+            await connection.ExecuteAsync(@"
+            UPDATE ip_bans 
+            SET unbanned = TRUE 
+            WHERE ip_address = @IpAddress AND unbanned = FALSE;",
                 new { IpAddress = ipAddress });
 
-            // Remove do cache
-            _bannedIps.Remove(ipAddress);
-            _ipBanReasons.Remove(ipAddress);
+            if (_bannedIps.Remove(ipAddress))
+            {
+                _ipBanReasons.Remove(ipAddress);
+            }
 
             Server.NextFrame(() =>
             {
                 Server.ExecuteCommand($"removeip {ipAddress}");
                 Server.ExecuteCommand($"writeip");
             });
-        }, $"✅ IP {ipAddress} desbanido.", "❌ Erro ao desbanir o IP."));
+
+            caller?.PrintToChat($"✅ IP {ipAddress} desbanido.");
+            Console.WriteLine($"[AdminControlPlugin] Admin {caller?.PlayerName} desbaniu o IP {ipAddress}.");
+        },
+        $"✅ IP {ipAddress} desbanido.",
+        "❌ Erro ao desbanir o IP."));
     }
 
 
-    // --- Comandos de Console ---
+    public void HandleGrantAdmin(CCSPlayerController? caller, ulong steamId, string name, string permission, int level, DateTime? expiresAt)
+    {
+        Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+            await connection.ExecuteAsync(@"
+                INSERT INTO admins (steamid, name, permission, level, expires_at, granted_by)
+                VALUES (@SteamId, @Name, @Permission, @Level, @ExpiresAt, @GrantedBy)
+                ON DUPLICATE KEY UPDATE
+                    name = @Name,
+                    permission = @Permission,
+                    level = @Level,
+                    expires_at = @ExpiresAt,
+                    granted_by = @GrantedBy,
+                    timestamp = CURRENT_TIMESTAMP;",
+            new
+            {
+                SteamId = steamId,
+                Name = name,
+                Permission = permission,
+                Level = level,
+                ExpiresAt = expiresAt,
+                GrantedBy = caller?.AuthorizedSteamID?.SteamId64
+            });
+
+            await GenerateAdminsJsonAsync();
+        }, $"✅ Admin {name} adicionado com permissão {permission}.", "❌ Erro ao adicionar admin."));
+    }
+    
+
+    // Adicione esta função para encontrar o jogador pelo nome ou SteamID
+    private CCSPlayerController? FindPlayerByNameOrSteamId(CCSPlayerController? caller, string identifier)
+    {
+        // Tenta encontrar pelo SteamID
+        if (ulong.TryParse(identifier, out var steamId))
+        {
+            var player = Utilities.GetPlayers().FirstOrDefault(p => p.AuthorizedSteamID?.SteamId64 == steamId);
+            if (player != null)
+            {
+                return player;
+            }
+        }
+
+        // Tenta encontrar pelo nome (parcial)
+        var players = Utilities.GetPlayers()
+            .Where(p => p.IsValid && p.PlayerName.Contains(identifier, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (players.Count == 1)
+        {
+            return players.First();
+        }
+
+        // Múltiplos jogadores encontrados ou nenhum
+        if (players.Count > 1)
+        {
+            caller?.PrintToChat("❌ Múltiplos jogadores encontrados. Por favor, seja mais específico.");
+        }
+        else
+        {
+            caller?.PrintToChat($"❌ Nenhum jogador com o nome ou SteamID '{identifier}' encontrado.");
+        }
+
+        return null;
+    }
+
+    public void HandleRemoveAdmin(CCSPlayerController? caller, ulong steamId)
+    {
+        Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
+        {
+            using var connection = await GetOpenConnectionAsync();
+            await connection.ExecuteAsync("DELETE FROM admins WHERE steamid = @SteamId;", new { SteamId = steamId });
+            await GenerateAdminsJsonAsync();
+        }, $"✅ Admin removido com sucesso.", "❌ Erro ao remover admin."));
+    }
 
     [RequiresPermissions("@css/ban")]
     public void BanPlayer(CCSPlayerController? caller, CommandInfo info)
@@ -740,16 +770,61 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         HandleUnban(caller, steamId);
     }
 
-    [RequiresPermissions("@css/ban")]
-    public void IpBanPlayer(CCSPlayerController? caller, CommandInfo info)
+    [RequiresPermissions("@css/chat")] // A permissão pode ser ajustada conforme sua necessidade
+    // Adicione este comando para mutar jogadores via console ou RCON
+    [RequiresPermissions("@css/chat")]
+    public void MutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
     {
         if (info.ArgCount < 2)
         {
-            caller?.PrintToChat("Uso: css_ipban <endereço de IP> <motivo>");
+            caller?.PrintToChat("Uso: css_mute <nome_ou_steamid> [motivo]");
             return;
         }
+
+        var targetIdentifier = info.GetArg(1);
+        var target = FindPlayerByNameOrSteamId(caller, targetIdentifier);
+
+        if (target != null)
+        {
+            var reason = info.ArgCount > 2 ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) : "Mute from console";
+
+            // Muta o jogador no jogo e registra no banco de dados
+            target.VoiceFlags = 0;
+            caller?.PrintToChat($"🔇 Jogador {target.PlayerName} foi mutado.");
+            HandleMute(caller, target.AuthorizedSteamID!.SteamId64, reason);
+        }
+    }
+
+    [RequiresPermissions("@css/chat")] // Ou a permissão que você preferir
+    public void UnmutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
+        {
+            caller?.PrintToChat("Uso: css_unmute <steamid64>");
+            return;
+        }
+        HandleUnmute(caller, steamId);
+    }
+
+    [RequiresPermissions("@css/ban")]
+    public void IpBanPlayer(CCSPlayerController? caller, CommandInfo info)
+    {
+        // Verifica se há pelo menos um argumento (o endereço de IP)
+        if (info.ArgCount < 2)
+        {
+            caller?.PrintToChat("Uso: css_ipban <endereço de IP> [motivo]");
+            return;
+        }
+
         var ipAddress = info.GetArg(1);
-        var reason = string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i)));
+
+        // Pega o motivo do banimento, se ele existir.
+        // Se não houver, a string "reason" ficará vazia.
+        var reason = info.ArgCount > 2 ?
+            string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) :
+            string.Empty;
+
+        // A chamada correta para a sua função HandleIpBan
         HandleIpBan(caller, ipAddress, reason);
     }
 
@@ -806,29 +881,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         caller?.PrintToChat($"📡 Comando RCON executado: {command}");
     }
 
-    [RequiresPermissions("@css/admin")]
-    public void GrantBasicAdmin(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
-        {
-            caller?.PrintToChat("Uso: css_admin <steamid64>");
-            return;
-        }
-        var name = Utilities.GetPlayers().FirstOrDefault(p => p.AuthorizedSteamID?.SteamId64 == steamId)?.PlayerName ?? "Admin";
-        HandleGrantAdmin(caller, steamId, name, "@css/basic", 1, null);
-    }
-
-    [RequiresPermissions("@css/admin")]
-    public void RemoveAdmin(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
-        {
-            caller?.PrintToChat("Uso: css_removeadmin <steamid64>");
-            return;
-        }
-        HandleRemoveAdmin(caller, steamId);
-    }
-
     [RequiresPermissions("@css/root")]
     public void GrantCustomAdmin(CCSPlayerController? caller, CommandInfo info)
     {
@@ -846,124 +898,48 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         HandleGrantAdmin(caller, steamId, name, permission, level, expiresAt);
     }
 
-    // --- Comandos de Chat ---
-
-    public void ChatBanPlayer(CCSPlayerController? caller, CommandInfo info)
+    private void ShowBanConfirmation(CCSPlayerController admin, CCSPlayerController target, string reason)
     {
-        if (caller == null || !HasRequiredFlags(caller))
+        var confirmMenu = new ChatMenu($"⚠️ Confirmar banimento de {target.PlayerName}?", this)
         {
-            caller?.PrintToChat("❌ Você não tem permissão para usar este comando.");
-            return;
-        }
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat("Uso: !ban <nome do jogador> [motivo]");
-            return;
-        }
-        var playerName = info.GetArg(1);
-        var reason = string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i)));
-        if (string.IsNullOrEmpty(reason))
-        {
-            reason = "Sem motivo especificado.";
-        }
-        var playerToBan = FindPlayerByName(caller, playerName);
-        if (playerToBan == null) return;
-        HandleBan(caller, playerToBan.AuthorizedSteamID!.SteamId64, reason);
+            ExitButton = true,
+            MenuTime = 20
+        };
+
+        confirmMenu.AddItem("✅ Confirmar", (p, o) => HandleBan(p, target.AuthorizedSteamID!.SteamId64, reason));
+        confirmMenu.AddItem("❌ Cancelar", (p, o) => ShowAdminAndBanMenu(p)); // Corrigido aqui
+
+        confirmMenu.Display(admin, 20);
     }
 
-    public void ChatUnbanPlayer(CCSPlayerController? caller, CommandInfo info)
+    // Adicione este método para evitar o erro CS0103
+    public void ShowAdminAndBanMenu(CCSPlayerController player)
     {
-        if (caller == null || !HasRequiredFlags(caller))
-        {
-            caller?.PrintToChat("❌ Você não tem permissão para usar este comando.");
-            return;
-        }
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat("Uso: !unban <nome do jogador>");
-            return;
-        }
-        var playerName = info.GetArg(1);
-        var playerToUnban = FindPlayerByName(caller, playerName);
-        if (playerToUnban == null) return;
-        HandleUnban(caller, playerToUnban.AuthorizedSteamID!.SteamId64);
+        _playerCommand?.ShowAdminAndBanMenu(player);
     }
 
-    public void ChatIpBanPlayer(CCSPlayerController? caller, CommandInfo info)
+    public void StartMapVote(CCSPlayerController caller)
     {
-        if (caller == null || !HasRequiredFlags(caller))
-        {
-            caller?.PrintToChat("❌ Você não tem permissão para usar este comando.");
-            return;
-        }
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat("Uso: !ipban <nome do jogador> [motivo]");
-            return;
-        }
-        var playerName = info.GetArg(1);
-        var reason = string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i)));
-        if (string.IsNullOrEmpty(reason))
-        {
-            reason = "Sem motivo especificado.";
-        }
-        var playerToBan = FindPlayerByName(caller, playerName);
-        if (playerToBan == null) return;
-        HandleIpBan(caller, playerToBan.IpAddress!, reason);
-    }
+        var maps = new List<string> { "de_dust2", "de_inferno", "de_mirage" };
 
-    public void ChatUnbanIpPlayer(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (caller == null || !HasRequiredFlags(caller))
-        {
-            caller?.PrintToChat("❌ Você não tem permissão para usar este comando.");
-            return;
-        }
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat("Uso: !unbanip <nome do jogador>");
-            return;
-        }
-        var playerName = info.GetArg(1);
-        var playerToUnban = FindPlayerByName(caller, playerName);
-        if (playerToUnban == null) return;
-        HandleUnbanIp(caller, playerToUnban.IpAddress!);
-    }
+        var vote = new PanoramaVote(
+            "🗳 Votação de Mapa",
+            "Escolha o próximo mapa",
+            result =>
+            {
+                string winner = maps[0]; // Aqui você pode usar lógica real com base nos votos
+                Server.ExecuteCommand($"changelevel {winner}");
+                caller.PrintToChat($"✅ Mapa escolhido: {winner}");
+                return true;
+            },
+            (action, slot, voteOption) =>
+            {
+                Console.WriteLine($"[MapVote] Slot {slot} votou opção {voteOption}");
+            },
+            this
+        );
 
-    public void ChatGrantBasicAdmin(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (caller == null || !HasRequiredFlags(caller))
-        {
-            caller?.PrintToChat("❌ Você não tem permissão para usar este comando.");
-            return;
-        }
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat("Uso: !admin <nome do jogador>");
-            return;
-        }
-        var playerName = info.GetArg(1);
-        var playerToGrant = FindPlayerByName(caller, playerName);
-        if (playerToGrant == null) return;
-        HandleGrantAdmin(caller, playerToGrant.AuthorizedSteamID!.SteamId64, playerName, "@css/basic", 1, null);
-    }
-
-    public void ChatRemoveAdmin(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (caller == null || !HasRequiredFlags(caller))
-        {
-            caller?.PrintToChat("❌ Você não tem permissão para usar este comando.");
-            return;
-        }
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat("Uso: !removeadm <nome do jogador>");
-            return;
-        }
-        var playerName = info.GetArg(1);
-        var playerToRemove = FindPlayerByName(caller, playerName);
-        if (playerToRemove == null) return;
-        HandleRemoveAdmin(caller, playerToRemove.AuthorizedSteamID!.SteamId64);
+        vote.DisplayVoteToAll(20); // Tempo da votação em segundos
     }
 
     [RequiresPermissions("@css/root")]
@@ -977,35 +953,27 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         });
     }
 
-    public void ChatCheckStatus(CCSPlayerController? caller, CommandInfo info)
+    // --- Novos métodos para comandos de menu ---
+
+    [RequiresPermissions("@css/admin")]
+    public void OpenMenuCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (caller == null || !caller.IsValid)
+        {
+            info.ReplyToCommand("Este comando só pode ser usado por um jogador.");
+            return;
+        }
+        _playerCommand?.ShowAdminAndBanMenu(caller);
+    }
+
+    public void OpenMenuChatCommand(CCSPlayerController? caller, CommandInfo info)
     {
         if (caller == null || !caller.IsValid)
         {
             return;
         }
-
-        Task.Run(async () =>
-        {
-            var steamId = caller.AuthorizedSteamID!.SteamId64;
-            var banReason = await GetClientBanReasonAsync(steamId);
-            var ipBanReason = await GetClientIpBanReasonAsync(caller.IpAddress!);
-
-            Server.NextFrame(() =>
-            {
-                if (banReason != null)
-                {
-                    caller.PrintToChat($"🚫 Seu status: Você está banido. Motivo: {banReason}");
-                }
-                else if (ipBanReason != null)
-                {
-                    caller.PrintToChat($"🚫 Seu status: Seu IP está banido. Motivo: {ipBanReason}");
-                }
-                else
-                {
-                    caller.PrintToChat("✅ Seu status: Você não está banido.");
-                }
-            });
-        });
+        _playerCommand?.ShowAdminAndBanMenu(caller);
+        
     }
 
     private void EnsureSharedConfigFilesExist()
@@ -1061,44 +1029,5 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         if (!File.Exists(bannedUserPath)) File.WriteAllText(bannedUserPath, "");
         var bannedIpPath = Path.Combine(Server.GameDirectory, "csgo/cfg/banned_ip.cfg");
         if (!File.Exists(bannedIpPath)) File.WriteAllText(bannedIpPath, "");
-    }
-
-    private void HandleGrantAdmin(CCSPlayerController? caller, ulong steamId, string name, string permission, int level, DateTime? expiresAt)
-    {
-        Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
-        {
-            using var connection = await GetOpenConnectionAsync();
-            await connection.ExecuteAsync(@"
-                INSERT INTO admins (steamid, name, permission, level, expires_at, granted_by)
-                VALUES (@SteamId, @Name, @Permission, @Level, @ExpiresAt, @GrantedBy)
-                ON DUPLICATE KEY UPDATE
-                    name = @Name,
-                    permission = @Permission,
-                    level = @Level,
-                    expires_at = @ExpiresAt,
-                    granted_by = @GrantedBy,
-                    timestamp = CURRENT_TIMESTAMP;",
-            new
-            {
-                SteamId = steamId,
-                Name = name,
-                Permission = permission,
-                Level = level,
-                ExpiresAt = expiresAt,
-                GrantedBy = caller?.AuthorizedSteamID?.SteamId64
-            });
-
-            await GenerateAdminsJsonAsync();
-        }, $"✅ Admin {name} adicionado com permissão {permission}.", "❌ Erro ao adicionar admin."));
-    }
-
-    private void HandleRemoveAdmin(CCSPlayerController? caller, ulong steamId)
-    {
-        Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
-        {
-            using var connection = await GetOpenConnectionAsync();
-            await connection.ExecuteAsync("DELETE FROM admins WHERE steamid = @SteamId;", new { SteamId = steamId });
-            await GenerateAdminsJsonAsync();
-        }, $"✅ Admin removido com sucesso.", "❌ Erro ao remover admin."));
     }
 }
