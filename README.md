@@ -17,6 +17,21 @@ configure o plugin e o api.php
 
 <img width="864" height="538" alt="image" src="https://github.com/user-attachments/assets/0ec651c4-a512-4325-a07f-db5c6a282d24" />
 
+<img width="712" height="473" alt="image" src="https://github.com/user-attachments/assets/707c0159-b978-4f2f-ac0e-1b462eb6f51e" />
+
+<img width="703" height="345" alt="image" src="https://github.com/user-attachments/assets/325f12a0-645c-4a97-b4db-8de44c045f50" />
+
+<img width="705" height="198" alt="image" src="https://github.com/user-attachments/assets/c052b68f-80b1-4024-8360-1cae23f849ec" />
+
+✅ Teste rápido
+1. 	Entre no servidor como admin.
+2. 	Digite  no chat.
+3. 	Navegue pelas opções: gerenciar jogadores, banir, adicionar admin, etc.
+4. 	Teste comandos no console como .
+
+
+
+
 \\DESKTOP-OVNF85N\htdocs\cs2panel\api.php
 
     <?php
