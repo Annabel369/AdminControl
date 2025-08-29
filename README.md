@@ -23,11 +23,30 @@ configure o plugin e o api.php
 
 <img width="705" height="198" alt="image" src="https://github.com/user-attachments/assets/c052b68f-80b1-4024-8360-1cae23f849ec" />
 
+<img width="691" height="209" alt="image" src="https://github.com/user-attachments/assets/df0edb3e-2257-4d4c-bb9e-d4f51736069b" />
+
+
 ✅ Teste rápido
 1. 	Entre no servidor como admin.
 2. 	Digite  no chat.
 3. 	Navegue pelas opções: gerenciar jogadores, banir, adicionar admin, etc.
 4. 	Teste comandos no console como .
+
+🖱 Ações pelo Menu
+Quando você abre o menu ( ou ), ele oferece:
+• 	👥 Gerenciar Jogadores
+• 	🚫 Banir jogador (com submenu de motivo e confirmação)
+• 	🌐 Banir IP (com submenu de motivo)
+• 	➕ Adicionar Admin
+• 	➖ Remover Admin
+• 	👢 Kickar jogador (com confirmação)
+• 	🔇 Mutar jogador (com confirmação)
+• 	🔄 Trocar time (com confirmação)
+• 	🔷 Lista de Admins (consulta no banco)
+• 	🚫 Banidos por SteamID (com opção de desbanir)
+• 	🌐 Banidos por IP (com opção de desbanir)
+• 	🗳 Votação de Mapa (inicia votação para troca de mapa)
+
 
 
 
