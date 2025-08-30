@@ -5,6 +5,7 @@ using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Commands.Targeting;
 using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API.ValveConstants.Protobuf;
@@ -24,7 +25,7 @@ namespace AdminControlPlugin;
 public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.AdminControlConfig>
 {
     public override string ModuleName => "Admin Control with MySQL & CFG Sync";
-    public override string ModuleVersion => "12.0.0"; // Versão Super Legal
+    public override string ModuleVersion => "14.0.0";
     public override string ModuleAuthor => "Amauri Bueno dos Santos & Gemini";
     public override string ModuleDescription => "Plugin completo para banimentos, admins e RCON com MySQL e sincronização com arquivos de configuração nativos do servidor.";
 
@@ -32,13 +33,12 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
     public AdminControlConfig Config { get; set; } = new AdminControlConfig();
     private Timer? _adminCheckTimer;
 
-    // Cache de banidos na memória para verificações rápidas
     private HashSet<ulong> _bannedPlayers = new HashSet<ulong>();
     private HashSet<string> _bannedIps = new HashSet<string>();
     private Dictionary<ulong, string> _banReasons = new Dictionary<ulong, string>();
     private Dictionary<string, string> _ipBanReasons = new Dictionary<string, string>();
+    private HashSet<ulong> _mutedPlayers = new HashSet<ulong>();
 
-    // Instância da nova classe de comandos de jogador
     private PlayerCommand? _playerCommand;
 
     public void OnConfigParsed(AdminControlConfig config)
@@ -116,22 +116,17 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
     {
         try
         {
-            // Inicializa a classe de comandos
             _playerCommand = new PlayerCommand(this);
 
-            // Eventos e listeners
             RegisterListener<Listeners.OnMapStart>(OnMapStart);
             RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFullCheckBan);
 
-            // Inicialização assíncrona segura
             Task.Run(async () =>
             {
                 await EnsureDatabaseAndTablesExistAsync();
                 await GenerateAdminsJsonAsync();
-                await LoadBansFromDatabaseAsync();
             }).GetAwaiter().GetResult();
 
-            // Comandos de Console (mantidos aqui)
             AddCommand("css_ban", "Ban a player by SteamID64", BanPlayer);
             AddCommand("css_unban", "Unban a player by SteamID64", UnbanPlayer);
             AddCommand("css_ipban", "Ban a player by IP Address", IpBanPlayer);
@@ -139,11 +134,11 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             AddCommand("css_listbans", "List all banned players", ListBans);
             AddCommand("css_rcon", "Execute RCON command", ExecuteRcon);
             AddCommand("css_addadmin", "Grant custom admin with permission and duration", GrantCustomAdmin);
+            AddCommand("css_removeadmin", "Remove a custom admin by SteamID64", RemoveAdminCommand); // NOVO COMANDO
             AddCommand("css_reloadadmins", "Reloads admins from the database", ReloadAdminsCommand);
             AddCommand("css_unmute", "Desmuta um jogador pelo SteamID", UnmutePlayerCommand);
             AddCommand("css_mute", "Muta um jogador por nome ou SteamID", MutePlayerCommand);
 
-            // Novos comandos para abrir o menu
             AddCommand("css_menu", "Abre o menu de admins e banidos", OpenMenuCommand);
             AddCommand("!adminmenu", "Abre o menu de admins e banidos", OpenMenuChatCommand);
             AddCommand("/adminmenu", "Abre o menu", OpenMenuChatCommand);
@@ -152,7 +147,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             AddCommand("!mute", "Muta um jogador", MuteCommand);
             AddCommand("!swapteam", "Move jogador para o outro time", SwapTeamCommand);
 
-            // Timer de verificação de admins
             StartAdminCheckTimer();
 
             Console.WriteLine("[AdminControlPlugin] Plugin carregado com sucesso!");
@@ -196,6 +190,12 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             return HookResult.Stop;
         }
 
+        if (_mutedPlayers.Contains(steamId))
+        {
+            player.VoiceFlags = 0;
+            player.PrintToChat("Você está mutado neste servidor.");
+        }
+
         return HookResult.Continue;
     }
 
@@ -221,6 +221,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         await connection.OpenAsync();
         await connection.ExecuteAsync($"CREATE DATABASE IF NOT EXISTS `{Config.Database}`;");
         await connection.ChangeDatabaseAsync(Config.Database);
+
         await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS bans (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -230,7 +231,9 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             unbanned BOOLEAN NOT NULL DEFAULT FALSE,
             PRIMARY KEY (id),
             INDEX idx_steamid (steamid)
-        );
+        );");
+
+        await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS ip_bans (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             ip_address VARCHAR(45) NOT NULL,
@@ -239,7 +242,9 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             unbanned BOOLEAN NOT NULL DEFAULT FALSE,
             PRIMARY KEY (id),
             INDEX idx_ip (ip_address)
-        );
+        );");
+
+        await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS admins (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             steamid BIGINT UNSIGNED NOT NULL,
@@ -251,17 +256,16 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             INDEX idx_admin_steamid (steamid)
-        );
+        );");
+
+        await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS mutes (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             steamid BIGINT UNSIGNED NOT NULL,
             reason VARCHAR(255),
             timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             unmuted BOOLEAN NOT NULL DEFAULT FALSE,
-            PRIMARY KEY (id),
-            INDEX idx_mute_steamid (steamid)
-        );
-        ");
+            PRIMARY KEY (steamid)
+        );");
     }
 
     public async Task GenerateAdminsJsonAsync()
@@ -348,12 +352,33 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
+    private async Task LoadMutesFromDatabaseAsync()
+    {
+        try
+        {
+            using var connection = await GetOpenConnectionAsync();
+            var mutedPlayers = await connection.QueryAsync<MuteEntry>("SELECT steamid FROM mutes WHERE unmuted = FALSE;");
+
+            _mutedPlayers.Clear();
+            foreach (var mute in mutedPlayers)
+            {
+                _mutedPlayers.Add(mute.steamid);
+            }
+            Console.WriteLine($"[AdminControlPlugin] Cache de mutes carregado com sucesso. {mutedPlayers.Count()} jogadores mutados.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AdminControlPlugin] ERRO ao carregar mutes do banco de dados: {ex.Message}");
+        }
+    }
+
     public void OnMapStart(string mapName)
     {
         Task.Run(async () =>
         {
             await GenerateAdminsJsonAsync();
             await LoadBansFromDatabaseAsync();
+            await LoadMutesFromDatabaseAsync();
         });
         Server.ExecuteCommand("exec banned_user.cfg");
         Server.ExecuteCommand("exec banned_ip.cfg");
@@ -365,7 +390,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         {
             using var connection = await GetOpenConnectionAsync();
 
-            // Insere novo registro de mute (histórico)
             await connection.ExecuteAsync(@"
             INSERT INTO mutes (steamid, reason)
             VALUES (@SteamId, @Reason);",
@@ -382,20 +406,56 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         {
             using var connection = await GetOpenConnectionAsync();
 
-            // Marca todos os mutes ativos desse SteamID como desmutados
             await connection.ExecuteAsync(@"
-            UPDATE mutes 
-            SET unmuted = TRUE 
+            UPDATE mutes
+            SET unmuted = TRUE
             WHERE steamid = @SteamId AND unmuted = FALSE;",
                 new { SteamId = steamId });
 
-            caller?.PrintToChat($"✅ Jogador {steamId} desmutado.");
-            Console.WriteLine($"[AdminControlPlugin] Admin {caller?.PlayerName} desmutou o jogador {steamId}.");
+            _mutedPlayers.Remove(steamId);
+
+            var targetPlayer = Utilities.GetPlayers().FirstOrDefault(p => p.AuthorizedSteamID?.SteamId64 == steamId);
+            if (targetPlayer != null)
+            {
+                targetPlayer.VoiceFlags = (VoiceFlags)2;
+                caller?.PrintToChat($"✅ Jogador {targetPlayer.PlayerName} desmutado.");
+            }
         },
         $"✅ Jogador {steamId} desmutado.",
         "❌ Erro ao desmutar o jogador."));
     }
 
+    public void MuteCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        Console.WriteLine("[AdminControlPlugin] Comando 'css_mute' foi executado.");
+        if (info.ArgCount < 2)
+        {
+            caller?.PrintToChat("Uso: css_mute <nome_ou_steamid> [motivo]");
+            Server.PrintToConsole("Uso: css_mute <nome_ou_steamid> [motivo]");
+            return;
+        }
+
+        var targetIdentifier = info.GetArg(1);
+        var target = FindPlayerByNameOrSteamId(caller, targetIdentifier);
+
+        if (target != null)
+        {
+            Console.WriteLine($"[AdminControlPlugin] Encontrado jogador: {target.PlayerName} com SteamID: {target.AuthorizedSteamID!.SteamId64}");
+            var reason = info.ArgCount > 2 ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) : "Mute from console";
+
+            target.VoiceFlags = (VoiceFlags)0;
+            caller?.PrintToChat($"🔇 Jogador {target.PlayerName} foi mutado.");
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} mutou o jogador {target.PlayerName} ({target.AuthorizedSteamID!.SteamId64}). Motivo: {reason}.");
+
+            HandleMute(caller, target.AuthorizedSteamID!.SteamId64, reason);
+        }
+        else
+        {
+            Console.WriteLine($"[AdminControlPlugin] Não foi possível encontrar o jogador com o identificador: {targetIdentifier}");
+            caller?.PrintToChat("❌ Jogador não encontrado.");
+            Server.PrintToConsole($"[AdminControlPlugin] Comando 'css_mute' falhou. Jogador '{targetIdentifier}' não encontrado.");
+        }
+    }
 
     public void KickCommand(CCSPlayerController? caller, CommandInfo info)
     {
@@ -415,46 +475,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             caller.PrintToChat("❌ Jogador não encontrado.");
         }
     }
-
-    public void MuteCommand(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (caller == null || info.ArgCount < 1) return;
-
-        var targetName = info.GetArg(0);
-        var target = Utilities.GetPlayers()
-            .FirstOrDefault(p => p.IsValid && p.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase));
-
-        if (target != null)
-        {
-            var steamId = target.AuthorizedSteamID!.SteamId64;
-            var reason = info.ArgCount > 1
-                ? string.Join(" ", Enumerable.Range(1, info.ArgCount - 1).Select(i => info.GetArg(i)))
-                : "Mute from command";
-
-            // Muta o jogador no jogo
-            target.VoiceFlags = 0;
-            caller.PrintToChat($"🔇 {target.PlayerName} foi mutado.");
-
-            // Registra no banco de dados (novo registro sempre)
-            Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
-            {
-                using var connection = await GetOpenConnectionAsync();
-                await connection.ExecuteAsync(@"
-                INSERT INTO mutes (steamid, reason)
-                VALUES (@SteamId, @Reason);",
-                    new { SteamId = steamId, Reason = reason });
-
-            }, $"✅ Jogador {target.PlayerName} mutado. Motivo: {reason}",
-               "❌ Erro ao mutar o jogador."));
-        }
-        else
-        {
-            caller?.PrintToChat("❌ Jogador não encontrado.");
-        }
-    }
-
-
-    
 
     public void SwapTeamCommand(CCSPlayerController? caller, CommandInfo info)
     {
@@ -526,7 +546,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }
     }
 
-
     public async Task<string?> GetClientIpBanReasonAsyncIP(string? ipAddress)
     {
         if (string.IsNullOrEmpty(ipAddress)) return null;
@@ -573,6 +592,9 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             _bannedPlayers.Add(steamId);
             _banReasons[steamId] = reason;
 
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} baniu o jogador {steamId}. Motivo: {reason}");
+
+
             Server.NextFrame(() =>
             {
                 Server.ExecuteCommand($"banid 0 {steamId}");
@@ -598,6 +620,9 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             _bannedPlayers.Remove(steamId);
             _banReasons.Remove(steamId);
 
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} desbaniu o jogador {steamId}.");
+
+
             Server.NextFrame(() =>
             {
                 Server.ExecuteCommand($"removeid {steamId}");
@@ -606,20 +631,32 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         }, $"✅ Jogador {steamId} desbanido.", "❌ Erro ao desbanir o jogador."));
     }
 
-    public void HandleIpBan(CCSPlayerController? caller, string ipAddress, string reason)
+    public void HandleIpBan(CCSPlayerController? caller, string ipAddress)
     {
+        string reason = "Sockpuppeting";
+
         Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
         {
             using var connection = await GetOpenConnectionAsync();
 
-            // Insere novo registro de ban por IP
+            var alreadyBanned = await connection.QueryFirstOrDefaultAsync<int>(
+                "SELECT COUNT(*) FROM ip_bans WHERE ip_address = @IpAddress",
+                new { IpAddress = ipAddress });
+
+            if (alreadyBanned > 0)
+            {
+                return;
+            }
+
             await connection.ExecuteAsync(@"
-            INSERT INTO ip_bans (ip_address, reason) 
-            VALUES (@IpAddress, @Reason);",
+            INSERT INTO ip_bans (ip_address, reason, timestamp, unbanned)
+            VALUES (@IpAddress, @Reason, NOW(), false);",
                 new { IpAddress = ipAddress, Reason = reason });
 
             _bannedIps.Add(ipAddress);
             _ipBanReasons[ipAddress] = reason;
+
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} baniu o IP {ipAddress}. Motivo: {reason}");
 
             Server.NextFrame(() =>
             {
@@ -645,10 +682,9 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         {
             using var connection = await GetOpenConnectionAsync();
 
-            // Marca todos os bans ativos desse IP como desbanidos
             await connection.ExecuteAsync(@"
-            UPDATE ip_bans 
-            SET unbanned = TRUE 
+            UPDATE ip_bans
+            SET unbanned = TRUE
             WHERE ip_address = @IpAddress AND unbanned = FALSE;",
                 new { IpAddress = ipAddress });
 
@@ -656,6 +692,8 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             {
                 _ipBanReasons.Remove(ipAddress);
             }
+
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} desbaniu o IP {ipAddress}.");
 
             Server.NextFrame(() =>
             {
@@ -669,7 +707,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         $"✅ IP {ipAddress} desbanido.",
         "❌ Erro ao desbanir o IP."));
     }
-
 
     public void HandleGrantAdmin(CCSPlayerController? caller, ulong steamId, string name, string permission, int level, DateTime? expiresAt)
     {
@@ -695,16 +732,14 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
                 ExpiresAt = expiresAt,
                 GrantedBy = caller?.AuthorizedSteamID?.SteamId64
             });
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} adicionou o admin {name}. Permissão: {permission}, Nível: {level}.");
 
             await GenerateAdminsJsonAsync();
         }, $"✅ Admin {name} adicionado com permissão {permission}.", "❌ Erro ao adicionar admin."));
     }
-    
 
-    // Adicione esta função para encontrar o jogador pelo nome ou SteamID
     private CCSPlayerController? FindPlayerByNameOrSteamId(CCSPlayerController? caller, string identifier)
     {
-        // Tenta encontrar pelo SteamID
         if (ulong.TryParse(identifier, out var steamId))
         {
             var player = Utilities.GetPlayers().FirstOrDefault(p => p.AuthorizedSteamID?.SteamId64 == steamId);
@@ -714,7 +749,6 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             }
         }
 
-        // Tenta encontrar pelo nome (parcial)
         var players = Utilities.GetPlayers()
             .Where(p => p.IsValid && p.PlayerName.Contains(identifier, StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -724,14 +758,15 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             return players.First();
         }
 
-        // Múltiplos jogadores encontrados ou nenhum
         if (players.Count > 1)
         {
             caller?.PrintToChat("❌ Múltiplos jogadores encontrados. Por favor, seja mais específico.");
+            Server.PrintToConsole($"[AdminControlPlugin] Múltiplos jogadores encontrados para '{identifier}'.");
         }
         else
         {
             caller?.PrintToChat($"❌ Nenhum jogador com o nome ou SteamID '{identifier}' encontrado.");
+            Server.PrintToConsole($"[AdminControlPlugin] Nenhum jogador com o nome ou SteamID '{identifier}' encontrado.");
         }
 
         return null;
@@ -741,10 +776,23 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
     {
         Task.Run(async () => await ExecuteDbActionAsync(caller, async () =>
         {
-            using var connection = await GetOpenConnectionAsync();
+            await using var connection = await GetOpenConnectionAsync();
             await connection.ExecuteAsync("DELETE FROM admins WHERE steamid = @SteamId;", new { SteamId = steamId });
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} removeu o admin {steamId}.");
             await GenerateAdminsJsonAsync();
         }, $"✅ Admin removido com sucesso.", "❌ Erro ao remover admin."));
+    }
+
+    [RequiresPermissions("@css/root")] // A anotação para remover admin
+    public void RemoveAdminCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
+        {
+            caller?.PrintToChat("Uso: css_removeadmin <steamid64>");
+            Server.PrintToConsole("Uso: css_removeadmin <steamid64>");
+            return;
+        }
+        HandleRemoveAdmin(caller, steamId);
     }
 
     [RequiresPermissions("@css/ban")]
@@ -753,6 +801,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
         {
             caller?.PrintToChat("Uso: css_ban <steamid64> <motivo>");
+            Server.PrintToConsole("Uso: css_ban <steamid64> <motivo>");
             return;
         }
         var reason = string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i)));
@@ -765,19 +814,33 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
         {
             caller?.PrintToChat("Uso: css_unban <steamid64>");
+            Server.PrintToConsole("Uso: css_unban <steamid64>");
             return;
         }
         HandleUnban(caller, steamId);
     }
 
-    [RequiresPermissions("@css/chat")] // A permissão pode ser ajustada conforme sua necessidade
-    // Adicione este comando para mutar jogadores via console ou RCON
     [RequiresPermissions("@css/chat")]
+    public void UnmutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
+        {
+            caller?.PrintToChat("Uso: css_unmute <steamid64>");
+            Server.PrintToConsole("Uso: css_unmute <steamid64>");
+            return;
+        }
+        Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} tentou desmutar o jogador {steamId}.");
+        HandleUnmute(caller, steamId);
+    }
+
+    [RequiresPermissions("@css/chat")] // A permissão pode ser ajustada conforme sua necessidade
     public void MutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
     {
+        Console.WriteLine("[AdminControlPlugin] Comando 'css_mute' foi executado.");
         if (info.ArgCount < 2)
         {
             caller?.PrintToChat("Uso: css_mute <nome_ou_steamid> [motivo]");
+            Server.PrintToConsole("Uso: css_mute <nome_ou_steamid> [motivo]");
             return;
         }
 
@@ -786,46 +849,40 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
 
         if (target != null)
         {
+            Console.WriteLine($"[AdminControlPlugin] Encontrado jogador: {target.PlayerName} com SteamID: {target.AuthorizedSteamID!.SteamId64}");
             var reason = info.ArgCount > 2 ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) : "Mute from console";
 
-            // Muta o jogador no jogo e registra no banco de dados
-            target.VoiceFlags = 0;
+            target.VoiceFlags = (VoiceFlags)0;
             caller?.PrintToChat($"🔇 Jogador {target.PlayerName} foi mutado.");
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} mutou o jogador {target.PlayerName} ({target.AuthorizedSteamID!.SteamId64}). Motivo: {reason}.");
+
+            // Chama a função para registrar no banco de dados
             HandleMute(caller, target.AuthorizedSteamID!.SteamId64, reason);
         }
-    }
-
-    [RequiresPermissions("@css/chat")] // Ou a permissão que você preferir
-    public void UnmutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
+        else
         {
-            caller?.PrintToChat("Uso: css_unmute <steamid64>");
-            return;
+            Console.WriteLine($"[AdminControlPlugin] Não foi possível encontrar o jogador com o identificador: {targetIdentifier}");
+            caller?.PrintToChat("❌ Jogador não encontrado.");
+            Server.PrintToConsole($"[AdminControlPlugin] Comando 'css_mute' falhou. Jogador '{targetIdentifier}' não encontrado.");
         }
-        HandleUnmute(caller, steamId);
     }
 
     [RequiresPermissions("@css/ban")]
     public void IpBanPlayer(CCSPlayerController? caller, CommandInfo info)
     {
-        // Verifica se há pelo menos um argumento (o endereço de IP)
         if (info.ArgCount < 2)
         {
             caller?.PrintToChat("Uso: css_ipban <endereço de IP> [motivo]");
+            Server.PrintToConsole("Uso: css_ipban <endereço de IP> [motivo]");
             return;
         }
 
         var ipAddress = info.GetArg(1);
-
-        // Pega o motivo do banimento, se ele existir.
-        // Se não houver, a string "reason" ficará vazia.
         var reason = info.ArgCount > 2 ?
             string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) :
             string.Empty;
 
-        // A chamada correta para a sua função HandleIpBan
-        HandleIpBan(caller, ipAddress, reason);
+        HandleIpBan(caller, ipAddress);
     }
 
     [RequiresPermissions("@css/unban")]
@@ -834,37 +891,46 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         if (info.ArgCount < 2)
         {
             caller?.PrintToChat("Uso: css_unbanip <endereço de IP>");
+            Server.PrintToConsole("Uso: css_unbanip <endereço de IP>");
             return;
         }
         var ipAddress = info.GetArg(1);
         HandleUnbanIp(caller, ipAddress);
     }
 
-    [RequiresPermissions("@css/ban")]
+    [RequiresPermissions("@css/rcon")]
     public async void ListBans(CCSPlayerController? caller, CommandInfo info)
     {
         try
         {
+            Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} listou os banimentos.");
             using var connection = await GetOpenConnectionAsync();
             var steamBans = await connection.QueryAsync<BanEntry>("SELECT steamid, reason, timestamp FROM bans WHERE unbanned = FALSE;");
             var ipBans = await connection.QueryAsync<IpBanEntry>("SELECT ip_address, reason, timestamp FROM ip_bans WHERE unbanned = FALSE;");
 
             caller?.PrintToChat("--- Lista de Banimentos Ativos ---");
             caller?.PrintToChat("Banimentos por SteamID:");
+            Server.PrintToConsole("--- Lista de Banimentos Ativos ---");
+            Server.PrintToConsole("Banimentos por SteamID:");
             foreach (var ban in steamBans)
             {
                 caller?.PrintToChat($"🚫 SteamID: {ban.steamid} | Motivo: {ban.reason} | Data: {ban.timestamp:dd/MM/yyyy}");
+                Server.PrintToConsole($"SteamID: {ban.steamid} | Motivo: {ban.reason} | Data: {ban.timestamp:dd/MM/yyyy}");
             }
             caller?.PrintToChat("Banimentos por IP:");
+            Server.PrintToConsole("Banimentos por IP:");
             foreach (var ban in ipBans)
             {
                 caller?.PrintToChat($"🚫 IP: {ban.ip_address} | Motivo: {ban.reason} | Data: {ban.timestamp:dd/MM/yyyy}");
+                Server.PrintToConsole($"IP: {ban.ip_address} | Motivo: {ban.reason} | Data: {ban.timestamp:dd/MM/yyyy}");
             }
             caller?.PrintToChat("----------------------------------");
+            Server.PrintToConsole("----------------------------------");
         }
         catch (Exception ex)
         {
             caller?.PrintToChat($"❌ Erro ao listar banimentos: {ex.Message}");
+            Server.PrintToConsole($"[AdminControlPlugin] ERRO ao listar banimentos: {ex.Message}");
         }
     }
 
@@ -874,11 +940,13 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         if (info.ArgCount < 2)
         {
             caller?.PrintToChat("Uso: css_rcon <comando>");
+            Server.PrintToConsole("Uso: css_rcon <comando>");
             return;
         }
         var command = string.Join(" ", Enumerable.Range(1, info.ArgCount - 1).Select(i => info.GetArg(i)));
         Server.ExecuteCommand(command);
         caller?.PrintToChat($"📡 Comando RCON executado: {command}");
+        Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} executou o comando RCON: {command}");
     }
 
     [RequiresPermissions("@css/root")]
@@ -890,11 +958,13 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             !int.TryParse(info.GetArg(5), out var durationMinutes))
         {
             caller?.PrintToChat("Uso: css_addadmin <steamid64> <nome> <permissao> <nivel> <tempo_em_minutos>");
+            Server.PrintToConsole("Uso: css_addadmin <steamid64> <nome> <permissao> <nivel> <tempo_em_minutos>");
             return;
         }
         var name = info.GetArg(2);
         var permission = info.GetArg(3);
         var expiresAt = DateTime.UtcNow.AddMinutes(durationMinutes);
+        Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} tentou adicionar um novo admin.");
         HandleGrantAdmin(caller, steamId, name, permission, level, expiresAt);
     }
 
@@ -907,12 +977,11 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         };
 
         confirmMenu.AddItem("✅ Confirmar", (p, o) => HandleBan(p, target.AuthorizedSteamID!.SteamId64, reason));
-        confirmMenu.AddItem("❌ Cancelar", (p, o) => ShowAdminAndBanMenu(p)); // Corrigido aqui
+        confirmMenu.AddItem("❌ Cancelar", (p, o) => ShowAdminAndBanMenu(p));
 
         confirmMenu.Display(admin, 20);
     }
 
-    // Adicione este método para evitar o erro CS0103
     public void ShowAdminAndBanMenu(CCSPlayerController player)
     {
         _playerCommand?.ShowAdminAndBanMenu(player);
@@ -927,7 +996,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             "Escolha o próximo mapa",
             result =>
             {
-                string winner = maps[0]; // Aqui você pode usar lógica real com base nos votos
+                string winner = maps[0];
                 Server.ExecuteCommand($"changelevel {winner}");
                 caller.PrintToChat($"✅ Mapa escolhido: {winner}");
                 return true;
@@ -939,21 +1008,21 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
             this
         );
 
-        vote.DisplayVoteToAll(20); // Tempo da votação em segundos
+        vote.DisplayVoteToAll(20);
     }
 
     [RequiresPermissions("@css/root")]
     public void ReloadAdminsCommand(CCSPlayerController? caller, CommandInfo info)
     {
+        Server.PrintToConsole($"[AdminControlPlugin] Admin {caller?.PlayerName ?? "Console"} recarregou o banco de dados.");
         Task.Run(async () =>
         {
             await GenerateAdminsJsonAsync();
             await LoadBansFromDatabaseAsync();
             caller?.PrintToChat("✅ Admins e banimentos recarregados com sucesso!");
+            Server.PrintToConsole("[AdminControlPlugin] Admins e banimentos recarregados com sucesso.");
         });
     }
-
-    // --- Novos métodos para comandos de menu ---
 
     [RequiresPermissions("@css/admin")]
     public void OpenMenuCommand(CCSPlayerController? caller, CommandInfo info)
@@ -961,8 +1030,10 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         if (caller == null || !caller.IsValid)
         {
             info.ReplyToCommand("Este comando só pode ser usado por um jogador.");
+            Server.PrintToConsole($"[AdminControlPlugin] Tentativa de usar css_menu por um não-jogador.");
             return;
         }
+        Server.PrintToConsole($"[AdminControlPlugin] Admin {caller.PlayerName} abriu o menu de administração.");
         _playerCommand?.ShowAdminAndBanMenu(caller);
     }
 
@@ -972,8 +1043,8 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlPlugin.A
         {
             return;
         }
+        Server.PrintToConsole($"[AdminControlPlugin] Admin {caller.PlayerName} abriu o menu de administração via chat.");
         _playerCommand?.ShowAdminAndBanMenu(caller);
-        
     }
 
     private void EnsureSharedConfigFilesExist()
