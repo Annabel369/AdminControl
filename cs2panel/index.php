@@ -3,12 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="icon" href="./favicon.png" type="image/png">
     <title>Painel de Administrador - CS2</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="imagem-container">
+    <img src="tdmueatdmueatdmu.png" alt="Counter-Strike 2">
+    <p class="imagem-legenda">Counter-Strike 2 - Tela de informacao</p>
+</div>
     <div class="container">
         <div class="header">
             <h1>Painel de Administração</h1>

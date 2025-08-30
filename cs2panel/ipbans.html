@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Banimentos por IP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #8e2de2;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        .pagination {
+            margin-top: 20px;
+        }
+        .pagination-link {
+            margin-right: 8px;
+            color: #8e2de2;
+            text-decoration: none;
+        }
+        .pagination-link.active {
+            font-weight: bold;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Banimentos por IP</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Endereço IP</th>
+                    <th>Motivo</th>
+                    <th>Data</th>
+                </tr>
+            </thead>
+            <tbody id="ipbans-list"></tbody>
+        </table>
+        <div id="ipbans-pagination" class="pagination"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const listElements = {
+                'ipbans': document.getElementById('ipbans-list')
+            };
+
+            const paginationElements = {
+                'ipbans': document.getElementById('ipbans-pagination')
+            };
+
+            const apiTypeMap = {
+                'ipbans': 'ip_bans'
+            };
+
+            const ITEMS_PER_PAGE = 10;
+
+            const fetchData = async (type, page = 1) => {
+                const url = `api.php?type=${apiTypeMap[type]}&page=${page}`;
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`Erro de rede: ${response.status}`);
+                    const data = await response.json();
+                    if (data.error) throw new Error(`Erro do servidor: ${data.error}`);
+                    return data;
+                } catch (error) {
+                    console.error('Erro ao buscar dados:', error);
+                    return { data: [], total_count: 0 };
+                }
+            };
+
+            const renderTable = (data, listElement, paginationElement, type, currentPage, totalCount) => {
+                listElement.innerHTML = '';
+
+                if (data.length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="4" style="text-align:center;">Nenhum registro encontrado.</td>`;
+                    listElement.appendChild(row);
+                } else {
+                    data.forEach(item => {
+                        const row = document.createElement('tr');
+                        const statusText = item.unbanned ? 'Desbanido' : 'Banido';
+                        const statusIcon = item.unbanned
+                            ? '<i class="fas fa-check-circle icon-unban"></i>'
+                            : '<i class="fas fa-ban icon-ban"></i>';
+                        row.innerHTML = `
+                            <td class="status-cell">${statusIcon} ${statusText}</td>
+                            <td>${item.ip_address}</td>
+                            <td>${item.reason}</td>
+                            <td>${item.timestamp}</td>
+                        `;
+                        listElement.appendChild(row);
+                    });
+                }
+
+                renderPagination(totalCount, paginationElement, type, currentPage);
+            };
+
+            const renderPagination = (totalItems, paginationElement, type, currentPage) => {
+                const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+                paginationElement.innerHTML = '';
+
+                for (let i = 1; i <= totalPages; i++) {
+                    const link = document.createElement('a');
+                    link.href = '#';
+                    link.textContent = i;
+                    link.classList.add('pagination-link');
+                    if (i === currentPage) link.classList.add('active');
+
+                    link.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        const data = await fetchData(type, i);
+                        renderTable(data.data, listElements[type], paginationElements[type], type, i, data.total_count);
+                    });
+
+                    paginationElement.appendChild(link);
+                }
+            };
+
+            fetchData('ipbans', 1).then(data => {
+                renderTable(data.data, listElements['ipbans'], paginationElements['ipbans'], 'ipbans', 1, data.total_count);
+            });
+        });
+    </script>
+</body>
+</html>
