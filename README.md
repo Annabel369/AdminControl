@@ -1,4 +1,6 @@
 # AdminControlPlugin
+<img width="1770" height="986" alt="image" src="https://github.com/user-attachments/assets/51a8073f-c42e-4770-a397-bc255c04bc15" />
+
 Admin Control with MySQL & CFG Sync for Counter-Strike 2
 
 
