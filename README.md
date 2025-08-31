@@ -1,8 +1,6 @@
 # AdminControlPlugin
 Admin Control with MySQL & CFG Sync for Counter-Strike 2
 
-https://github.com/Annabel369/AdminControl/blob/main/tdmueatdmueatdmu.png
-
 
 AdminControlPlugin is a comprehensive Counter-Strike 2 plugin that provides robust administrative controls, including player and IP banning, muting, and RCON execution. It seamlessly integrates with a MySQL database for persistent storage and synchronizes with native server configuration files. The plugin's modular design makes it easy to maintain and expand.
 
