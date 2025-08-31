@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>${item.granted_at}</td>
                     `;
                 } else if (type === 'bans') {
-                    const statusText = item.unbanned ? 'Desbanido' : 'Banido';
+                    const statusText = item.unbanned ? lang.status_unbanned : lang.status_banned;
                     const statusIcon = item.unbanned
                         ? '<i class="fas fa-check-circle icon-unban"></i>'
                         : '<i class="fas fa-ban icon-ban"></i>';
@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>${item.timestamp}</td>
                     `;
                 } else if (type === 'ip_bans') {
-                    const statusText = item.unbanned ? 'Desbanido' : 'Banido';
+                    const statusText = item.unbanned ? lang.status_unbanned : lang.status_banned;
                     const statusIcon = item.unbanned
                         ? '<i class="fas fa-check-circle icon-unban"></i>'
                         : '<i class="fas fa-ban icon-ban"></i>';
@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td>${item.timestamp}</td>
                     `;
                 } else if (type === 'mutes') {
-                    const statusText = item.unmuted ? 'Desmutado' : 'Mutado';
+                    const statusText = item.unmuted ? lang.status_unmuted : lang.status_muted;
                     const statusIcon = item.unmuted
                         ? '<i class="fas fa-check-circle icon-unban"></i>'
                         : '<i class="fas fa-volume-mute icon-ban"></i>';
