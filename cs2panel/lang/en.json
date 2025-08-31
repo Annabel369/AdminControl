@@ -21,5 +21,29 @@
   "status_unbanned": "Unbanned",
   "status_muted": "Muted",
   "status_unmuted": "Unmuted",
-  "footer": "© 2025 — Created by Amauri Bueno dos Santos with support from Copilot. Clean code, sharp server."
+  "footer": "© 2025 — Created by Amauri Bueno dos Santos with support from Copilot. Clean code, sharp server.",
+
+  "rcon_label": "RCON Command:",
+  "rcon_placeholder": "e.g. status",
+  "rcon_button": "Execute",
+  "steam_button": "Join server via Steam",
+  "no_command": "No command executed yet.",
+  "error_connect": "Failed to connect to RCON.",
+  "error_send": "Error sending command:",
+  "empty_command": "Please enter an RCON command.",
+  "admin_commands_title": "Admin Commands — @css/admin",
+
+  "cmd_status": "Displays the current status of the CS2 server via RCON.",
+  "cmd_css_ban": "Bans a player using their SteamID64.",
+  "cmd_css_unban": "Unbans a player using their SteamID64.",
+  "cmd_css_ipban": "Bans a player's IP address.",
+  "cmd_css_unbanip": "Unbans an IP address.",
+  "cmd_css_mute": "Mutes a player on the server.",
+  "cmd_css_addadmin": "Adds an admin using SteamID64, name, group, and permission levels.",
+  "cmd_css_removeadmin": "Removes an admin using their SteamID64.",
+  "cmd_css_unmute": "Unmutes a player using their SteamID64.",
+  "cmd_meta_list": "Lists all plugins loaded by MetaMod.",
+  "cmd_meta_version": "Displays the current version of MetaMod.",
+  "cmd_css_plugins_list": "Lists all active plugins from CSS Admin.",
+  "cmd_example_addadmin": "Example: css_addadmin 76561199806844693 Astral2 @css/root 99 99999"
 }

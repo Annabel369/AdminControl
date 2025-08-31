@@ -168,3 +168,4 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTable(data.data, listElement, paginationElement, activeTab, 1, data.total_count);
     });
 });
+
