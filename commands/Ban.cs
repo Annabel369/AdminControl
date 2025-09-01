@@ -170,18 +170,32 @@ public class Ban
     [RequiresPermissions("@css/ban")]
     public void IpBanPlayerCommand(CCSPlayerController? caller, CommandInfo info)
     {
-        if (info.ArgCount < 2 || !IPAddress.TryParse(info.GetArg(1), out _))
+        if (info.ArgCount < 2)
         {
             caller?.PrintToChat(_plugin.T("ip_ban_usage"));
             Server.PrintToConsole(_plugin.T("ip_ban_usage"));
             return;
         }
-        var ipAddress = info.GetArg(1);
-        var reason = info.ArgCount > 2 ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) : _plugin.T("no_reason_specified");
+
+        var rawIp = info.GetArg(1);
+        var ipAddress = rawIp.Split(':')[0]; // Remove a porta, se houver
+
+        if (!IPAddress.TryParse(ipAddress, out _))
+        {
+            caller?.PrintToChat(_plugin.T("ip_ban_usage"));
+            Server.PrintToConsole(_plugin.T("ip_ban_usage"));
+            return;
+        }
+
+        var reason = info.ArgCount > 2
+            ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i)))
+            : _plugin.T("no_reason_specified");
 
         Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_ip_ban_attempt", caller?.PlayerName ?? "Console", ipAddress, reason)}");
         HandleIpBan(caller, ipAddress, reason);
     }
+
+
 
     public async void HandleIpBan(CCSPlayerController? caller, string ipAddress, string reason)
     {

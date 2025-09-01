@@ -150,32 +150,9 @@ public class Admin
     }
 
     [RequiresPermissions("@css/root")]
-    public void RemoveAdminCommand(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
-        {
-            caller?.PrintToChat(_plugin.T("remove_admin_usage"));
-            Server.PrintToConsole(_plugin.T("remove_admin_usage"));
-            return;
-        }
-        HandleRemoveAdmin(caller, steamId);
-    }
+    
 
-    public async void HandleRemoveAdmin(CCSPlayerController? caller, ulong steamId)
-    {
-        try
-        {
-            await using var connection = await _plugin.GetOpenConnectionAsync();
-            await connection.ExecuteAsync("DELETE FROM admins WHERE steamid = @SteamId;", new { SteamId = steamId });
-            Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_admin_removed", caller?.PlayerName ?? "Console", steamId)}"); await GenerateAdminsJsonAsync();
-            caller?.PrintToChat(_plugin.T("admin_removed"));
-        }
-        catch (Exception ex)
-        {
-            caller?.PrintToChat(_plugin.T("error_removing_admin"));
-            Console.WriteLine($"[AdminControlPlugin] {_plugin.T("error_removing_admin_log", ex.Message)}");
-        }
-    }
+    
 
     [RequiresPermissions("@css/root")]
     public void ReloadAdminsCommand(CCSPlayerController? caller, CommandInfo info)

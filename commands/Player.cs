@@ -6,6 +6,7 @@ using CounterStrikeSharp.API.Modules.Utils;
 using CounterStrikeSharp.API.ValveConstants.Protobuf;
 using CS2MenuManager.API.Enum;
 using CS2MenuManager.API.Menu;
+using MySqlConnector;
 using System.Linq;
 
 namespace AdminControlPlugin.commands
@@ -104,8 +105,24 @@ namespace AdminControlPlugin.commands
 
         private void HandleRemoveAdminAction(CCSPlayerController admin, CCSPlayerController target)
         {
-            _plugin.AdminCommands.HandleRemoveAdmin(admin, target.AuthorizedSteamID!.SteamId64);
+            //HandleRemoveAdmin(admin, target.AuthorizedSteamID!.SteamId64);
             admin.PrintToChat(_plugin.T("admin_removed_from_menu"));
+        }
+
+        
+
+        public async Task ExecuteDbActionAsync(CCSPlayerController? caller, Func<Task> action, string successMessage, string errorMessage)
+        {
+            try
+            {
+                await action();
+                caller?.PrintToChat(successMessage);
+            }
+            catch (Exception ex)
+            {
+                caller?.PrintToChat(errorMessage);
+                Console.WriteLine($"[AdminControlPlugin] ERRO: {ex.Message}");
+            }
         }
 
         private void ShowBanConfirmation(CCSPlayerController admin, CCSPlayerController target)
