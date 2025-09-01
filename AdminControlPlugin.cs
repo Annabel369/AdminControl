@@ -18,7 +18,7 @@ namespace AdminControlPlugin;
 public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
 {
     public override string ModuleName => "Admin Control with MySQL & CFG Sync";
-    public override string ModuleVersion => "15.3.0";
+    public override string ModuleVersion => "15.3.2";
     public override string ModuleAuthor => "Amauri Bueno dos Santos & Gemini";
     public override string ModuleDescription => "Plugin completo para banimentos, admins e RCON com MySQL e sincronização com arquivos de configuração nativos do servidor.";
 
@@ -424,4 +424,5 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
         var bannedIpPath = Path.Combine(Server.GameDirectory, "csgo/cfg/banned_ip.cfg");
         if (!File.Exists(bannedIpPath)) File.WriteAllText(bannedIpPath, "");
     }
+
 }
