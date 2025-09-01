@@ -1,50 +1,34 @@
 <?php
+// Inicia a sessão no início do arquivo para garantir que esteja disponível
 session_start();
+
+// Inclui a conexão com o banco de dados
 require_once 'db_connect.php';
 
+// Variável para armazenar mensagens de erro
 $error = '';
 
-try {
-    // Attempt to get information from the 'users' table. If it does not exist, a
-    // PDOException will be thrown and caught below.
-    $pdo->query("SELECT 1 FROM users LIMIT 1");
-} catch (\PDOException $e) {
-    // The table does not exist, so we create it.
-    $sql = "CREATE TABLE users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) NOT NULL UNIQUE,
-        password VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );";
-    $pdo->exec($sql);
-    
-    // Add a default user for the first login
-    $default_user = 'admin';
-    $default_pass = 'admin123';
-    $hashed_password = password_hash($default_pass, PASSWORD_DEFAULT);
-
-    $stmt = $pdo->prepare("INSERT INTO users (username, password) VALUES (?, ?)");
-    $stmt->execute([$default_user, $hashed_password]);
-
-    // Set a translated success message
-    $error = $lang['db_success_message'];
-}
-
+// Verifica se a requisição é do tipo POST (se o formulário foi enviado)
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
 
+    // Prepara a consulta para evitar injeção SQL
     $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
     $stmt->execute([$username]);
     $user = $stmt->fetch();
 
+    // Verifica se o usuário existe e se a senha está correta
     if ($user && password_verify($password, $user['password'])) {
+        // Se as credenciais estiverem corretas, define as variáveis de sessão
         $_SESSION['loggedin'] = true;
         $_SESSION['username'] = $user['username'];
-        header("Location: index.php");
+
+        // Redireciona o usuário para a página protegida
+        header("Location: Protocon.php");
         exit;
     } else {
-        // Set a translated error message
+        // Define uma mensagem de erro em caso de falha no login
         $error = $lang['login_error_message'];
     }
 }
@@ -59,14 +43,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <link rel="stylesheet" href="style.css" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* CSS to make the layout smaller */
+        /* CSS para o layout menor, como solicitado */
         .container {
-            max-width: 400px; /* Reduces the maximum width */
+            max-width: 400px;
             margin-top: 5rem;
-            padding: 1.5rem; /* Reduces padding */
+            padding: 1.5rem;
         }
         .header {
-            padding-bottom: 0.75rem; /* Reduces padding */
+            padding-bottom: 0.75rem;
         }
     </style>
 </head>

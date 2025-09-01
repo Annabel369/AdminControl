@@ -1,4 +1,5 @@
 <?php
+session_start();
 // index.php
 
 include 'db_connect.php';
@@ -22,6 +23,14 @@ include 'db_connect.php';
     </script>
 </head>
 <body>
+<?php
+    if (isset($_SESSION['logout_message'])) {
+        echo "<div style='background-color: #4CAF50; color: white; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 20px;'>";
+        echo htmlspecialchars($_SESSION['logout_message']);
+        echo "</div>";
+        unset($_SESSION['logout_message']); // Remove a mensagem da sessão para que não seja exibida novamente
+    }
+    ?>
     <div class="container">
         <div class="header">
             <h1>
