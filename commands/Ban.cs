@@ -7,6 +7,8 @@ using Dapper;
 using System.Net;
 using CounterStrikeSharp.API.Modules.Utils;
 using System.Linq;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace AdminControlPlugin.commands;
 
@@ -28,6 +30,7 @@ public class Ban
     public bool IsIpBanned(string ip) => _bannedIps.Contains(ip);
     public string? GetIpBanReason(string ip) => _ipBanReasons.TryGetValue(ip, out var reason) ? reason : null;
 
+    // Classe de entrada para o banco de dados
     public class BanEntry
     {
         public ulong steamid { get; set; }
@@ -37,6 +40,8 @@ public class Ban
 
     public class IpBanEntry
     {
+        internal bool unbanned;
+
         public string ip_address { get; set; } = string.Empty;
         public string reason { get; set; } = string.Empty;
         public DateTime timestamp { get; set; }
@@ -61,20 +66,26 @@ public class Ban
                 _banReasons[ban.steamid] = ban.reason ?? _plugin.T("no_reason");
             }
 
+            // Processa bans por IP, removendo a porta se houver
             foreach (var ban in ipBans)
             {
-                if (ban.ip_address != null)
+                if (!string.IsNullOrWhiteSpace(ban.ip_address))
                 {
-                    _bannedIps.Add(ban.ip_address);
-                    _ipBanReasons[ban.ip_address] = ban.reason ?? _plugin.T("no_reason");
+                    // Remove a porta (ex: "192.168.0.1:27015" → "192.168.0.1")
+                    var cleanIp = ban.ip_address.Split(':')[0];
+
+                    _bannedIps.Add(cleanIp);
+                    _ipBanReasons[cleanIp] = ban.reason ?? _plugin.T("no_reason");
                 }
             }
+
             Console.WriteLine($"[AdminControlPlugin] {_plugin.T("log_bans_loaded", steamBans.Count(), ipBans.Count())}");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[AdminControlPlugin] {_plugin.T("error_loading_bans", ex.Message)}");
         }
+
     }
 
     [RequiresPermissions("@css/ban")]
@@ -96,10 +107,20 @@ public class Ban
         try
         {
             using var connection = await _plugin.GetOpenConnectionAsync();
+
+            var isAlreadyBanned = await connection.ExecuteScalarAsync<bool>(
+                "SELECT EXISTS(SELECT 1 FROM bans WHERE steamid = @SteamId AND unbanned = FALSE)", new { SteamId = steamId });
+
+            if (isAlreadyBanned)
+            {
+                caller?.PrintToChat(_plugin.T("player_already_banned"));
+                return;
+            }
+
             await connection.ExecuteAsync(@"
-                INSERT INTO bans (steamid, reason) VALUES (@SteamId, @Reason)
+                INSERT INTO bans (steamid, reason, unbanned) VALUES (@SteamId, @Reason, FALSE)
                 ON DUPLICATE KEY UPDATE reason = @Reason, unbanned = FALSE, timestamp = CURRENT_TIMESTAMP;",
-              new { SteamId = steamId, Reason = reason });
+                new { SteamId = steamId, Reason = reason });
 
             _bannedPlayers.Add(steamId);
             _banReasons[steamId] = reason;
@@ -137,28 +158,39 @@ public class Ban
             return;
         }
         Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_unban_attempt", caller?.PlayerName ?? "Console", steamId)}");
-        HandleUnban(caller, steamId);
+
+        // Chamada do método asíncrono e espera por ele.
+        Task.Run(() => HandleUnban(caller, steamId));
     }
 
-    public async void HandleUnban(CCSPlayerController? caller, ulong steamId)
+    // AQUI ESTÁ A MUDANÇA CRÍTICA:
+    // O método agora retorna um Task, permitindo que o chamador espere pela sua conclusão.
+    public async Task HandleUnban(CCSPlayerController? caller, ulong steamId)
     {
         try
         {
             using var connection = await _plugin.GetOpenConnectionAsync();
-            await connection.ExecuteAsync("UPDATE bans SET unbanned = TRUE WHERE steamid = @SteamId;",
-              new { SteamId = steamId });
+            var updatedRows = await connection.ExecuteAsync("UPDATE bans SET unbanned = TRUE WHERE steamid = @SteamId AND unbanned = FALSE;",
+                new { SteamId = steamId });
 
-            _bannedPlayers.Remove(steamId);
-            _banReasons.Remove(steamId);
-
-            Server.NextFrame(() =>
+            if (updatedRows > 0)
             {
-                Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_player_unbanned", caller?.PlayerName ?? "Console", steamId)}");
-                Server.ExecuteCommand($"removeid {steamId}");
-                Server.ExecuteCommand($"writeid");
+                _bannedPlayers.Remove(steamId);
+                _banReasons.Remove(steamId);
 
-                caller?.PrintToChat(_plugin.T("player_unbanned", steamId));
-            });
+                Server.NextFrame(() =>
+                {
+                    Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_player_unbanned", caller?.PlayerName ?? "Console", steamId)}");
+                    Server.ExecuteCommand($"removeid {steamId}");
+                    Server.ExecuteCommand($"writeid");
+                    caller?.PrintToChat(_plugin.T("player_unbanned", steamId));
+                });
+            }
+            else
+            {
+                // Mensagem de erro se o jogador não foi encontrado ou já estava desbanido
+                caller?.PrintToChat(_plugin.T("player_not_banned", steamId));
+            }
         }
         catch (Exception ex)
         {
@@ -178,7 +210,7 @@ public class Ban
         }
 
         var rawIp = info.GetArg(1);
-        var ipAddress = rawIp.Split(':')[0]; // Remove a porta, se houver
+        var ipAddress = rawIp.Split(':')[0];
 
         if (!IPAddress.TryParse(ipAddress, out _))
         {
@@ -195,32 +227,58 @@ public class Ban
         HandleIpBan(caller, ipAddress, reason);
     }
 
-
-
     public async void HandleIpBan(CCSPlayerController? caller, string ipAddress, string reason)
     {
         try
         {
-            using var connection = await _plugin.GetOpenConnectionAsync();
-            var alreadyBanned = await connection.QueryFirstOrDefaultAsync<int>("SELECT COUNT(*) FROM ip_bans WHERE ip_address = @IpAddress", new { IpAddress = ipAddress });
+            // Remove a porta, se houver
+            ipAddress = ipAddress.Split(':')[0];
 
-            if (alreadyBanned > 0)
+            using var connection = await _plugin.GetOpenConnectionAsync();
+
+            // Verifica se o IP já existe no banco
+            var existingBan = await connection.QueryFirstOrDefaultAsync<IpBanEntry>(
+                "SELECT * FROM ip_bans WHERE ip_address = @IpAddress LIMIT 1",
+                new { IpAddress = ipAddress });
+
+            if (existingBan != null)
             {
-                caller?.PrintToChat(_plugin.T("ip_already_banned", ipAddress));
-                return;
+                if (!existingBan.unbanned)
+                {
+                    // Já está banido
+                    caller?.PrintToChat(_plugin.T("ip_already_banned", ipAddress));
+                    return;
+                }
+                else
+                {
+                    // Está desbanido — atualiza para banido novamente
+                    await connection.ExecuteAsync(@"
+                    UPDATE ip_bans
+                    SET reason = @Reason, timestamp = NOW(), unbanned = FALSE
+                    WHERE ip_address = @IpAddress;",
+                        new { IpAddress = ipAddress, Reason = reason });
+
+                    Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_ip_rebanned", caller?.PlayerName ?? "Console", ipAddress)}");
+                }
+            }
+            else
+            {
+                // Não existe — insere novo banimento
+                await connection.ExecuteAsync(@"
+                INSERT INTO ip_bans (ip_address, reason, timestamp, unbanned)
+                VALUES (@IpAddress, @Reason, NOW(), FALSE);",
+                    new { IpAddress = ipAddress, Reason = reason });
+
+                Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_ip_banned", caller?.PlayerName ?? "Console", ipAddress)}");
             }
 
-            await connection.ExecuteAsync(@"
-                INSERT INTO ip_bans (ip_address, reason, timestamp, unbanned)
-                VALUES (@IpAddress, @Reason, NOW(), false);",
-              new { IpAddress = ipAddress, Reason = reason });
-
+            // Atualiza listas internas
             _bannedIps.Add(ipAddress);
             _ipBanReasons[ipAddress] = reason;
 
+            // Executa comandos no servidor
             Server.NextFrame(() =>
             {
-                Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_ip_banned", caller?.PlayerName ?? "Console", ipAddress)}");
                 Server.ExecuteCommand($"kickip {ipAddress} \"{_plugin.T("kick_ip_ban_message", reason)}\"");
                 Server.ExecuteCommand($"banip 0 {ipAddress}");
                 Server.ExecuteCommand($"writeip");
@@ -245,33 +303,44 @@ public class Ban
         }
         var ipAddress = info.GetArg(1);
         Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_unban_ip_attempt", caller?.PlayerName ?? "Console", ipAddress)}");
-        HandleUnbanIp(caller, ipAddress);
+
+        // Chamada do método asíncrono e espera por ele.
+        Task.Run(() => HandleUnbanIp(caller, ipAddress));
     }
 
-    public async void HandleUnbanIp(CCSPlayerController? caller, string ipAddress)
+    // AQUI ESTÁ A MUDANÇA CRÍTICA:
+    // O método agora retorna um Task, permitindo que o chamador espere pela sua conclusão.
+    public async Task HandleUnbanIp(CCSPlayerController? caller, string ipAddress)
     {
         try
         {
             using var connection = await _plugin.GetOpenConnectionAsync();
 
-            await connection.ExecuteAsync(@"
+            var updatedRows = await connection.ExecuteAsync(@"
                 UPDATE ip_bans
                 SET unbanned = TRUE
                 WHERE ip_address = @IpAddress AND unbanned = FALSE;",
-              new { IpAddress = ipAddress });
+                new { IpAddress = ipAddress });
 
-            if (_bannedIps.Remove(ipAddress))
+            if (updatedRows > 0)
             {
-                _ipBanReasons.Remove(ipAddress);
+                if (_bannedIps.Remove(ipAddress))
+                {
+                    _ipBanReasons.Remove(ipAddress);
+                }
+                Server.NextFrame(() =>
+                {
+                    Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_unbanned_ip", caller?.PlayerName ?? "Console", ipAddress)}");
+                    Server.ExecuteCommand($"removeip {ipAddress}");
+                    Server.ExecuteCommand($"writeip");
+                    caller?.PrintToChat(_plugin.T("ip_unbanned", ipAddress));
+                });
             }
-
-            Server.NextFrame(() =>
+            else
             {
-                Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_unbanned_ip", caller?.PlayerName ?? "Console", ipAddress)}");
-                Server.ExecuteCommand($"removeip {ipAddress}");
-                Server.ExecuteCommand($"writeip");
-                caller?.PrintToChat(_plugin.T("ip_unbanned", ipAddress));
-            });
+                // Mensagem de erro se o IP não foi encontrado ou já estava desbanido
+                caller?.PrintToChat(_plugin.T("ip_not_banned", ipAddress));
+            }
         }
         catch (Exception ex)
         {

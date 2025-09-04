@@ -150,11 +150,6 @@ public class Admin
     }
 
     [RequiresPermissions("@css/root")]
-    
-
-    
-
-    [RequiresPermissions("@css/root")]
     public void ReloadAdminsCommand(CCSPlayerController? caller, CommandInfo info)
     {
         Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_reload_admins_attempt", caller?.PlayerName ?? "Console")}");

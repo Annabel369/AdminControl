@@ -18,7 +18,7 @@ namespace AdminControlPlugin;
 public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
 {
     public override string ModuleName => "Admin Control with MySQL & CFG Sync";
-    public override string ModuleVersion => "15.3.2";
+    public override string ModuleVersion => "15.4.1";
     public override string ModuleAuthor => "Amauri Bueno dos Santos & Gemini";
     public override string ModuleDescription => "Plugin completo para banimentos, admins e RCON com MySQL e sincronização com arquivos de configuração nativos do servidor.";
 
@@ -269,29 +269,24 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
 
         await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS bans (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             steamid BIGINT UNSIGNED NOT NULL,
             reason VARCHAR(255),
-            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             unbanned BOOLEAN NOT NULL DEFAULT FALSE,
-            PRIMARY KEY (id),
-            INDEX idx_steamid (steamid)
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (steamid)
         );");
 
         await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS ip_bans (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             ip_address VARCHAR(45) NOT NULL,
             reason VARCHAR(255),
-            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             unbanned BOOLEAN NOT NULL DEFAULT FALSE,
-            PRIMARY KEY (id),
-            INDEX idx_ip (ip_address)
+            timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (ip_address)
         );");
 
         await connection.ExecuteAsync(@"
         CREATE TABLE IF NOT EXISTS admins (
-            id INT UNSIGNED NOT NULL AUTO_INCREMENT,
             steamid BIGINT UNSIGNED NOT NULL,
             name VARCHAR(64),
             permission VARCHAR(64),
@@ -299,8 +294,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
             expires_at DATETIME,
             granted_by BIGINT UNSIGNED,
             timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            INDEX idx_admin_steamid (steamid)
+            PRIMARY KEY (steamid)
         );");
 
         await connection.ExecuteAsync(@"
@@ -310,6 +304,14 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
             timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             unmuted BOOLEAN NOT NULL DEFAULT FALSE,
             PRIMARY KEY (steamid)
+        );");
+
+        await connection.ExecuteAsync(@"
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );");
     }
 
