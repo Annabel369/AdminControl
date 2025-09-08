@@ -5,6 +5,27 @@ Admin Control with MySQL & CFG Sync for Counter-Strike 2
 
 https://github.com/Annabel369/AdminControl_PHP_PAINEL/tree/main
 
+mariadb mariadb-11.3.2-winx64.msi https://mariadb.org/download/
+
+PhP php-8.4.12-Win32-vc15-x64.zip https://php.watch/versions/8.4/releases/8.4.12
+
+3 Apache httpd-2.4.59-240404-win64-VS17.zip https://www.apachelounge.com/download/
+
+C:\Apache24\bin\httpd.exe -k install
+
+
+	httpd.exe -k start
+	httpd.exe -k stop
+	ApacheMonitor.exe
+	WEB FILES http://localhost C:\Apache24\htdocs
+ 
+PhpmyAdmin phpMyAdmin-5.2.1-all-languages.zip https://www.phpmyadmin.net/
+
+	WEB FILES http://localhost/PhpmyAdmin C:\Apache24\htdocs\PhpmyAdmin\
+	edit or creat C:\Apache24\htdocs\phpMyAdmin\config.inc.php
+ 	creat  http://localhost/PhpmyAdmin/setup donwload config.inc.php
+  	Add C:\Apache24\htdocs\phpMyAdmin\config.inc.php
+
 
 AdminControlPlugin is a comprehensive Counter-Strike 2 plugin that provides robust administrative controls, including player and IP banning, muting, and RCON execution. It seamlessly integrates with a MySQL database for persistent storage and synchronizes with native server configuration files. The plugin's modular design makes it easy to maintain and expand.
 
