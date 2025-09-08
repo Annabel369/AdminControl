@@ -11,6 +11,8 @@ PhP php-8.4.12-Win32-vc15-x64.zip https://php.watch/versions/8.4/releases/8.4.12
 
 3 Apache httpd-2.4.59-240404-win64-VS17.zip https://www.apachelounge.com/download/
 
+https://learn.microsoft.com/pt-br/cpp/windows/latest-supported-vc-redist?view=msvc-170
+
 C:\Apache24\bin\httpd.exe -k install
 
 
