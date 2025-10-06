@@ -1,29 +1,33 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <!-- Adicionando o nome do arquivo de saída do plugin -->
     <AssemblyName>AdminControlPlugin</AssemblyName>
+    <OutDir>$(MSBuildThisFileDirectory)..\..\addons\counterstrikesharp\plugins\AdminControlPlugin\</OutDir>
   </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.339">
+    <PackageReference Include="CounterStrikeSharp.API" Version="1.0.340">
       <IncludeAssets>compile</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="CS2MenuManager" Version="1.0.39" />
-    <PackageReference Include="MySQLConnector" Version="2.4.0" />
-  </ItemGroup>
-  <ItemGroup>
+    
+    <PackageReference Include="CS2MenuManager" Version="1.0.40" />
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9" />
+    
     <PackageReference Include="Dapper" Version="2.1.66" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.8" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="System.Text.Json" Version="9.0.8" />
-  </ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="System.Text.Json" Version="9.0.9" />
+    </ItemGroup>
+
   <ItemGroup>
     <Content Include="lang\**">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
 </Project>

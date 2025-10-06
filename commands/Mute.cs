@@ -1,10 +1,11 @@
 ﻿using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
-using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
-using CounterStrikeSharp.API.Modules.Utils;
 using Dapper;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace AdminControlPlugin.commands;
 
@@ -20,6 +21,7 @@ public class Mute
 
     public bool IsMuted(ulong steamId) => _mutedPlayers.Contains(steamId);
 
+    // Estrutura de dados para Dapper
     public class MuteEntry
     {
         public ulong steamid { get; set; }
@@ -28,6 +30,7 @@ public class Mute
         public bool unmuted { get; set; }
     }
 
+    // Carregamento de Mutes (Seguro, pois é chamado no Task.Run)
     public async Task LoadMutesFromDatabaseAsync()
     {
         try
@@ -48,115 +51,18 @@ public class Mute
         }
     }
 
-    [RequiresPermissions("@css/chat")]
-    public void MutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (info.ArgCount < 2)
-        {
-            caller?.PrintToChat(_plugin.T("mute_usage"));
-            Server.PrintToConsole(_plugin.T("mute_usage"));
-            return;
-        }
-
-        var targetIdentifier = info.GetArg(1);
-        var target = FindPlayerByNameOrSteamId(caller, targetIdentifier);
-
-        if (target != null)
-        {
-            var reason = info.ArgCount > 2 ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) : _plugin.T("no_reason_provided_console");
-
-            target.VoiceFlags = (VoiceFlags)0;
-            caller?.PrintToChat(_plugin.T("player_muted", target.PlayerName));
-            Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_player_muted_reason", caller?.PlayerName ?? "Console", target.PlayerName, target.AuthorizedSteamID!.SteamId64, reason)}");
-
-            HandleMute(caller, target.AuthorizedSteamID!.SteamId64, reason);
-        }
-        else
-        {
-            caller?.PrintToChat(_plugin.T("player_not_found"));
-            Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_mute_failed", targetIdentifier)}");
-        }
-    }
-
-    public async void HandleMute(CCSPlayerController? caller, ulong steamId, string reason)
-    {
-        try
-        {
-            using var connection = await _plugin.GetOpenConnectionAsync();
-            await connection.ExecuteAsync(@"
-                INSERT INTO mutes (steamid, reason) VALUES (@SteamId, @Reason)
-                ON DUPLICATE KEY UPDATE unmuted = FALSE, timestamp = CURRENT_TIMESTAMP;",
-              new { SteamId = steamId, Reason = reason });
-
-            _mutedPlayers.Add(steamId);
-            caller?.PrintToChat(_plugin.T("mute_success"));
-        }
-        catch (Exception ex)
-        {
-            caller?.PrintToChat(_plugin.T("mute_error"));
-            Console.WriteLine($"[AdminControlPlugin] {_plugin.T("mute_error_log", ex.Message)}");
-        }
-    }
-
-    [RequiresPermissions("@css/chat")]
-    public void UnmutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
-    {
-        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
-        {
-            caller?.PrintToChat(_plugin.T("unmute_usage"));
-            Server.PrintToConsole(_plugin.T("unmute_usage"));
-            return;
-        }
-        Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_unmute_attempt", caller?.PlayerName ?? "Console", steamId)}");
-        HandleUnmute(caller, steamId);
-    }
-
-    public async void HandleUnmute(CCSPlayerController? caller, ulong steamId)
-    {
-        try
-        {
-            using var connection = await _plugin.GetOpenConnectionAsync();
-            var rowsAffected = await connection.ExecuteAsync(@"
-                UPDATE mutes
-                SET unmuted = TRUE
-                WHERE steamid = @SteamId AND unmuted = FALSE;",
-              new { SteamId = steamId });
-
-            _mutedPlayers.Remove(steamId);
-
-            var targetPlayer = Utilities.GetPlayers().FirstOrDefault(p => p.AuthorizedSteamID?.SteamId64 == steamId);
-            if (targetPlayer != null)
-            {
-                targetPlayer.VoiceFlags = (VoiceFlags)2;
-                caller?.PrintToChat(_plugin.T("player_unmuted_name", targetPlayer.PlayerName));
-            }
-            else
-            {
-                caller?.PrintToChat(_plugin.T("player_unmuted_steamid", steamId));
-            }
-            Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_player_unmuted_steamid_log", caller?.PlayerName ?? "Console", steamId)}");
-        }
-        catch (Exception ex)
-        {
-            caller?.PrintToChat(_plugin.T("unmute_error"));
-            Console.WriteLine($"[AdminControlPlugin] {_plugin.T("unmute_error_log", ex.Message)}");
-        }
-    }
-
+    // Método auxiliar para encontrar jogadores (Mantido aqui, pois lida apenas com entidades do jogo)
     private CCSPlayerController? FindPlayerByNameOrSteamId(CCSPlayerController? caller, string identifier)
     {
         if (ulong.TryParse(identifier, out var steamId))
         {
             var player = Utilities.GetPlayers().FirstOrDefault(p => p.AuthorizedSteamID?.SteamId64 == steamId);
-            if (player != null)
-            {
-                return player;
-            }
+            if (player != null) return player;
         }
 
         var players = Utilities.GetPlayers()
-          .Where(p => p.IsValid && p.PlayerName.Contains(identifier, StringComparison.OrdinalIgnoreCase))
-          .ToList();
+            .Where(p => p.IsValid && p.PlayerName.Contains(identifier, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         if (players.Count == 1)
         {
@@ -166,13 +72,70 @@ public class Mute
         if (players.Count > 1)
         {
             caller?.PrintToChat(_plugin.T("multiple_players_found"));
-            Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_multiple_players_found", identifier)}");
         }
         else
         {
             caller?.PrintToChat(_plugin.T("player_not_found_with_name", identifier));
-            Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_player_not_found", identifier)}");
         }
         return null;
     }
+
+
+    // --- COMANDOS DELEGAÇÃO ---
+
+    [RequiresPermissions("@css/chat")]
+    public void MutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (info.ArgCount < 2)
+        {
+            caller?.PrintToChat(_plugin.T("mute_usage"));
+            return;
+        }
+
+        var targetIdentifier = info.GetArg(1);
+        var reason = info.ArgCount > 2 ? string.Join(" ", Enumerable.Range(2, info.ArgCount - 2).Select(i => info.GetArg(i))) : _plugin.T("no_reason_provided_console");
+
+        // Tenta encontrar o alvo pelo nome/SteamID. Se não encontrar, tenta SteamID do argumento.
+        var targetPlayer = FindPlayerByNameOrSteamId(caller, targetIdentifier);
+
+        ulong steamId = 0;
+
+        if (targetPlayer != null && targetPlayer.AuthorizedSteamID != null)
+        {
+            steamId = targetPlayer.AuthorizedSteamID.SteamId64;
+        }
+        else if (ulong.TryParse(targetIdentifier, out var parsedSteamId))
+        {
+            steamId = parsedSteamId;
+        }
+
+        if (steamId != 0)
+        {
+            // DELEGA PARA O MANIPULADOR PROTEGIDO NA CLASSE PRINCIPAL
+            _plugin.HandleMute(caller, steamId, reason, targetPlayer?.PlayerName);
+        }
+        else
+        {
+            caller?.PrintToChat(_plugin.T("player_not_found"));
+        }
+    }
+
+    // MÉTODOS HANDLE REMOVIDOS DESTA CLASSE! (Movidos para AdminControlPlugin.cs)
+    // public async void HandleMute(...) {...}
+
+    [RequiresPermissions("@css/chat")]
+    public void UnmutePlayerCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        if (info.ArgCount < 2 || !ulong.TryParse(info.GetArg(1), out var steamId))
+        {
+            caller?.PrintToChat(_plugin.T("unmute_usage"));
+            return;
+        }
+
+        // DELEGA PARA O MANIPULADOR PROTEGIDO NA CLASSE PRINCIPAL
+        _plugin.HandleUnmute(caller, steamId);
+    }
+
+    // MÉTODOS HANDLE REMOVIDOS DESTA CLASSE! (Movidos para AdminControlPlugin.cs)
+    // public async void HandleUnmute(...) {...}
 }

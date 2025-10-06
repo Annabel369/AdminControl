@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace AdminControlPlugin.commands
 {
-    internal class PlayerCommand
+    public class PlayerCommand
     {
         private readonly AdminControlPlugin _plugin;
 
@@ -22,21 +22,21 @@ namespace AdminControlPlugin.commands
 
         public void ShowAdminAndBanMenu(CCSPlayerController player)
         {
-            var menu = new ChatMenu("👮 Menu Admin", _plugin)
+            var menu = new PlayerMenu("👮 Menu Admin", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
             };
 
             menu.AddItem("👥 Gerenciar Jogadores", (p, o) => ShowPlayerManagementMenu(p));
-            menu.AddItem("🗳 Votação de Mapa", (p, o) => _plugin.StartMapVote(p));
+            //menu.AddItem("🗳 Votação de Mapa", (p, o) => _plugin.StartMapVote(p));
 
             menu.Display(player, 20); // Corrigido o erro CS7036
         }
 
         private void ShowPlayerManagementMenu(CCSPlayerController caller)
         {
-            var menu = new ChatMenu("👥 Gerenciar Jogadores", _plugin)
+            var menu = new PlayerMenu("👥 Gerenciar Jogadores", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
@@ -61,7 +61,7 @@ namespace AdminControlPlugin.commands
 
         private void ShowPlayerActionsMenu(CCSPlayerController caller, CCSPlayerController target)
         {
-            var menu = new ChatMenu($"Ações para {target.PlayerName}", _plugin)
+            var menu = new PlayerMenu($"Ações para {target.PlayerName}", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
@@ -85,7 +85,7 @@ namespace AdminControlPlugin.commands
         // Métodos que estavam faltando (erros CS0103)
         private void ShowBanConfirmation(CCSPlayerController admin, CCSPlayerController target)
         {
-            var confirmMenu = new ChatMenu($"⚠️ Confirmar banimento de {target.PlayerName}?", _plugin)
+            var confirmMenu = new PlayerMenu($"⚠️ Confirmar banimento de {target.PlayerName}?", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
@@ -116,7 +116,7 @@ namespace AdminControlPlugin.commands
 
         private void ShowIpBanReasonMenu(CCSPlayerController caller, CCSPlayerController target)
         {
-            var menu = new ChatMenu($"🌐 Banir IP {target.PlayerName}", _plugin)
+            var menu = new PlayerMenu($"🌐 Banir IP {target.PlayerName}", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
@@ -139,8 +139,10 @@ namespace AdminControlPlugin.commands
                     admin.PrintToChat("❌ Não foi possível obter o IP do jogador.");
                     return;
                 }
-                Server.ExecuteCommand($"css_ipban {target.IpAddress} \"{reason}\"");
+                Server.ExecuteCommand($"css_ban {target.AuthorizedSteamID!.SteamId64} \"{reason}\"");
+                Server.ExecuteCommand($"css_ipban {target.IpAddress}  \"{reason}\"");
                 admin.PrintToChat($"🌐 IP {target.IpAddress} de {target.PlayerName} foi banido.");
+
             }
             catch (Exception ex)
             {
@@ -179,7 +181,7 @@ namespace AdminControlPlugin.commands
 
         private void ShowKickConfirmation(CCSPlayerController admin, CCSPlayerController target)
         {
-            var confirmMenu = new ChatMenu($"⚠️ Kickar {target.PlayerName}?", _plugin)
+            var confirmMenu = new PlayerMenu($"⚠️ Kickar {target.PlayerName}?", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
@@ -205,7 +207,7 @@ namespace AdminControlPlugin.commands
 
         private void ShowMuteConfirmation(CCSPlayerController admin, CCSPlayerController target)
         {
-            var confirmMenu = new ChatMenu($"🔇 Mutar {target.PlayerName}?", _plugin)
+            var confirmMenu = new PlayerMenu($"🔇 Mutar {target.PlayerName}?", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
@@ -215,6 +217,7 @@ namespace AdminControlPlugin.commands
             {
                 try
                 {
+                    Server.ExecuteCommand($"css_mute {target.AuthorizedSteamID!.SteamId64}");
                     target.VoiceFlags = 0;
                     p.PrintToChat($"🔇 {target.PlayerName} foi mutado.");
                 }
@@ -231,7 +234,7 @@ namespace AdminControlPlugin.commands
 
         private void ShowSwapTeamConfirmation(CCSPlayerController admin, CCSPlayerController target)
         {
-            var confirmMenu = new ChatMenu($"🔄 Trocar time de {target.PlayerName}?", _plugin)
+            var confirmMenu = new PlayerMenu($"🔄 Trocar time de {target.PlayerName}?", _plugin)
             {
                 ExitButton = true,
                 MenuTime = 20
