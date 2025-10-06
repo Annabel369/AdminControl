@@ -1,6 +1,18 @@
 # AdminControlPlugin
 <img width="1770" height="986" alt="image" src="https://github.com/user-attachments/assets/51a8073f-c42e-4770-a397-bc255c04bc15" />
 
+!admincontrol
+
+<img width="1919" height="585" alt="image" src="https://github.com/user-attachments/assets/f1f0f088-77b5-4451-a4c3-55f55b7ec417" />
+e
+#menu Adws E Interface Grafica
+<img width="316" height="182" alt="image" src="https://github.com/user-attachments/assets/829582c8-3780-4680-a555-b18260767e2c" />
+e
+<img width="323" height="185" alt="image" src="https://github.com/user-attachments/assets/3d61f58a-5ebe-430b-a61d-aca199ae210f" />
+
+
+
+
 Admin Control with MySQL & CFG Sync for Counter-Strike 2
 
 https://github.com/Annabel369/AdminControl_PHP_PAINEL/tree/main
@@ -152,7 +164,7 @@ Example en.json snippet:
 
 			@css/admin
 
-			!adminmenu
+			!admincontrol
 
 			Opens the main admin menu from chat.
 
