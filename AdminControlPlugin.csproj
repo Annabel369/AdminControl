@@ -7,7 +7,7 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <AssemblyName>AdminControlPlugin</AssemblyName>
-    <OutDir>$(MSBuildThisFileDirectory)..\..\addons\counterstrikesharp\plugins\AdminControlPlugin\</OutDir>
+    <PublishDir>bin\Release\net8.0\publish\AdminControlPlugin\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

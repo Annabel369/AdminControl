@@ -1,4 +1,4 @@
-﻿using CounterStrikeSharp.API;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
@@ -140,7 +140,7 @@ public class Ban
                 // ... (lógica de PrintToChat/PrintToConsole para steamBans e ipBans) ...
                 foreach (var ban in steamBans)
                 {
-                    caller?.PrintToChat(_plugin.T("steamid_ban_entry", ban.steamid, ban.reason, ban.timestamp));
+                    caller?.PrintToChat(_plugin.T("steamid_ban_entry", ban.steamid, ban.reason ?? _plugin.T("no_reason"), ban.timestamp));
                 }
                 foreach (var ban in ipBans)
                 {
@@ -154,13 +154,5 @@ public class Ban
         }
     }
 
-    internal void HandleBan(CCSPlayerController? cCSPlayerController, ulong targetSteamId, string v)
-    {
-        throw new NotImplementedException();
-    }
 
-    internal void IpBanPlayerCommand(CCSPlayerController p, CommandInfo commandInfo)
-    {
-        throw new NotImplementedException();
-    }
 }

@@ -1,39 +1,48 @@
-﻿
-using CounterStrikeSharp.API.Core;
-using CounterStrikeSharp.API.Modules.Menu;
-// REMOVA ESTA LINHA:
-using CS2MenuManager.API.Menu;
 
+using System;
+using CounterStrikeSharp.API.Core;
+using CS2MenuManager.API.Menu;
 
 namespace AdminControlPlugin.commands
 {
-    internal class GraphicalMenu
+    public class GraphicalMenu
     {
-        private string v;
-        private AdminControlPlugin plugin;
+        private readonly PlayerMenu _menu;
 
-        public GraphicalMenu(string v, AdminControlPlugin plugin)
+        public GraphicalMenu(string title, AdminControlPlugin plugin)
         {
-            this.v = v;
-            this.plugin = plugin;
+            _menu = new PlayerMenu(title, plugin);
         }
 
-        public bool ExitButton { get; set; }
-        public int MenuTime { get; set; }
-
-        internal void AddItem(string v, Action<object, object> value)
+        public bool ExitButton
         {
-            throw new NotImplementedException();
+            get => _menu.ExitButton;
+            set => _menu.ExitButton = value;
         }
 
-        internal void AddMenuItem(string v, Action<object, object> value)
+        public int MenuTime
         {
-            throw new NotImplementedException();
+            get => _menu.MenuTime;
+            set => _menu.MenuTime = value;
+        }
+
+        internal void AddItem(string text, Action<object, object> callback)
+        {
+            _menu.AddItem(text, (player, option) => {
+                callback(player, option);
+            });
+        }
+
+        internal void AddMenuItem(string text, Action<object, object> callback)
+        {
+            _menu.AddItem(text, (player, option) => {
+                callback(player, option);
+            });
         }
 
         internal void Display(CCSPlayerController caller, int v)
         {
-            throw new NotImplementedException();
+            _menu.Display(caller, v);
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using CounterStrikeSharp.API;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Commands;
@@ -11,7 +11,7 @@ using System.Collections.Generic;
 
 namespace AdminControlPlugin.commands
 {
-    internal class Player
+    public class Player
     {
         private readonly AdminControlPlugin _plugin;
 
@@ -41,7 +41,7 @@ namespace AdminControlPlugin.commands
             menu.AddItem(_plugin.T("menu_manage_players_item"), (p, o) => ShowPlayerManagementMenu((CCSPlayerController)p));
 
             // Supõe-se que o método StartMapVote na classe principal espera o CCSPlayerController
-            menu.AddItem(_plugin.T("menu_map_vote_item"), (p, o) => _plugin.StartMapVote((CCSPlayerController)p));
+            // menu.AddItem(_plugin.T("menu_map_vote_item"), (p, o) => _plugin.StartMapVote((CCSPlayerController)p));
 
             menu.Display(player, 20);
         }
@@ -75,7 +75,7 @@ namespace AdminControlPlugin.commands
                 }
                 else
                 {
-                    foreach (var p in players.Where(p => p != caller))
+                    foreach (var p in players)
                     {
                         var playerName = p.PlayerName;
                         menu.AddItem(playerName, (pc, o) =>
@@ -193,10 +193,10 @@ namespace AdminControlPlugin.commands
             };
 
             var targetSteamId = target.AuthorizedSteamID.SteamId64;
-            confirmMenu.AddItem(_plugin.T("ban_reason_cheating"), (p, o) => _plugin.BanCommands.HandleBan(p as CCSPlayerController, targetSteamId, "Cheating"));
-            confirmMenu.AddItem(_plugin.T("ban_reason_griefing"), (p, o) => _plugin.BanCommands.HandleBan(p as CCSPlayerController, targetSteamId, "Griefing"));
-            confirmMenu.AddItem(_plugin.T("ban_reason_bug_abuse"), (p, o) => _plugin.BanCommands.HandleBan(p as CCSPlayerController, targetSteamId, "Abusing bug"));
-            confirmMenu.AddItem(_plugin.T("ban_reason_other"), (p, o) => _plugin.BanCommands.HandleBan(p as CCSPlayerController, targetSteamId, "Other"));
+            confirmMenu.AddItem(_plugin.T("ban_reason_cheating"), (p, o) => _plugin.HandleBan(p as CCSPlayerController, targetSteamId, "Cheating"));
+            confirmMenu.AddItem(_plugin.T("ban_reason_griefing"), (p, o) => _plugin.HandleBan(p as CCSPlayerController, targetSteamId, "Griefing"));
+            confirmMenu.AddItem(_plugin.T("ban_reason_bug_abuse"), (p, o) => _plugin.HandleBan(p as CCSPlayerController, targetSteamId, "Abusing bug"));
+            confirmMenu.AddItem(_plugin.T("ban_reason_other"), (p, o) => _plugin.HandleBan(p as CCSPlayerController, targetSteamId, "Other"));
             confirmMenu.AddItem(_plugin.T("cancel_button"), (p, o) => { var callerController = p as CCSPlayerController; if (callerController != null) { ShowPlayerActionsMenu(callerController, target); } });
 
             confirmMenu.Display(admin, 20);
@@ -224,16 +224,16 @@ namespace AdminControlPlugin.commands
             // A sintaxe correta é: new CommandInfo(caller, name, arguments, flags)
 
             menu.AddItem(_plugin.T("ban_reason_cheating"), (p, o) =>
-                _plugin.BanCommands.IpBanPlayerCommand((CCSPlayerController)p, CreateCommandInfo((CCSPlayerController)p, targetIp, "Cheating")));
+                _plugin.HandleIpBan((CCSPlayerController)p, targetIp, "Cheating"));
 
             menu.AddItem(_plugin.T("ban_reason_griefing"), (p, o) =>
-                _plugin.BanCommands.IpBanPlayerCommand((CCSPlayerController)p, CreateCommandInfo((CCSPlayerController)p, targetIp, "Griefing")));
+                _plugin.HandleIpBan((CCSPlayerController)p, targetIp, "Griefing"));
 
             menu.AddItem(_plugin.T("ban_reason_bug_abuse"), (p, o) =>
-                _plugin.BanCommands.IpBanPlayerCommand((CCSPlayerController)p, CreateCommandInfo((CCSPlayerController)p, targetIp, "Abusing bug")));
+                _plugin.HandleIpBan((CCSPlayerController)p, targetIp, "Abusing bug"));
 
             menu.AddItem(_plugin.T("ban_reason_other"), (p, o) =>
-                _plugin.BanCommands.IpBanPlayerCommand((CCSPlayerController)p, CreateCommandInfo((CCSPlayerController)p, targetIp, "Other")));
+                _plugin.HandleIpBan((CCSPlayerController)p, targetIp, "Other"));
 
             menu.AddItem(_plugin.T("cancel_button"), (p, o) => ShowPlayerActionsMenu((CCSPlayerController)p, target));
 
@@ -285,13 +285,8 @@ namespace AdminControlPlugin.commands
     var playerController = p as CCSPlayerController;
     if (playerController != null)
     {
-        var steamId = target.AuthorizedSteamID.SteamId64.ToString();
         var reason = _plugin.T("no_reason");
-
-        // Você pode chamar o MuteCommands.MutePlayerCommand aqui:
-        // Exemplo: _plugin.MuteCommands.HandleMute(playerController, target, reason, TimeSpan.FromHours(1));
-
-        playerController.PrintToChat(_plugin.T("player_muted_success", target.PlayerName));
+        _plugin.HandleMute(playerController, target.AuthorizedSteamID.SteamId64, reason, target.PlayerName);
         ShowPlayerManagementMenu(playerController);
     }
 });
@@ -323,14 +318,6 @@ namespace AdminControlPlugin.commands
             confirmMenu.Display(admin, 20);
         }
 
-        private CommandInfo CreateCommandInfo(CCSPlayerController caller, string ip, string reason)
-        {
-            // Como não há construtor público para CommandInfo com 4 argumentos,
-            // você deve criar o objeto de acordo com a API real.
-            // Se necessário para testes, use um mock ou adapte para o método correto de criação.
-            // Aqui, retornando null para evitar erro de compilação, mas ajuste conforme sua API:
-            // return new CommandInfo(caller, "css_ipban9", new string[] { ip, reason }, 0);
-            throw new NotImplementedException("Criação de CommandInfo personalizada não suportada. Adapte conforme a API real.");
-        }
+
     }
 }

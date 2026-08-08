@@ -1,4 +1,4 @@
-﻿using AdminControlPlugin.commands;
+using AdminControlPlugin.commands;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes;
@@ -32,7 +32,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
     public Ban BanCommands { get; private set; } = null!;
     public Admin AdminCommands { get; private set; } = null!;
     public Mute MuteCommands { get; private set; } = null!;
-    public PlayerCommand PlayerCommands { get; private set; } = null!;
+    public Player PlayerCommands { get; private set; } = null!;
 
     public string T(string key, params object[] args)
     {
@@ -53,7 +53,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
             BanCommands = new Ban(this);
             AdminCommands = new Admin(this);
             MuteCommands = new Mute(this);
-            PlayerCommands = new PlayerCommand(this);
+            PlayerCommands = new Player(this);
 
             Task.Run(async () =>
             {
@@ -98,9 +98,11 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
         AddCommand("css_ipban", "Banir um IP", IpBanPlayerCommand);
         AddCommand("css_unbanip", "Unban a player by IP Address", BanCommands.UnbanIpCommand);
 
-        AddCommand("!kick", "Kicka um jogador", AdminCommands.KickCommand);
-        AddCommand("!mute", "Muta um jogador", MuteCommands.MutePlayerCommand);
-        AddCommand("!swapteam", "Move jogador para o outro time", AdminCommands.SwapTeamCommand);
+        AddCommand("css_kick", "Kicka um jogador", AdminCommands.KickCommand);
+        AddCommand("css_swapteam", "Move jogador para o outro time", AdminCommands.SwapTeamCommand);
+
+        AddCommand("css_reload_admins", "Recarrega os admins do banco de dados", AdminCommands.ReloadAdminsCommand);
+        AddCommand("css_admins", "Mostra os admins online no console", AdminCommands.ShowOnlineAdminsCommand);
     }
 
     public override void Unload(bool hotReload)
@@ -503,6 +505,7 @@ public class AdminControlPlugin : BasePlugin, IPluginConfig<AdminControlConfig>
 
     // --- MÉTODOS AUXILIARES ---
 
+    [RequiresPermissions("@css/generic")]
     private void Command_AdminMenu(CCSPlayerController? player, CommandInfo info)
     {
         if (player == null) return;

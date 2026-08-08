@@ -1,4 +1,4 @@
-﻿using CounterStrikeSharp.API;
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Admin;
@@ -28,7 +28,8 @@ public class Admin
         [JsonPropertyName("flags")]
         public List<string> Flags { get; set; } = new List<string>();
         [JsonPropertyName("groups")]
-        public List<string> Groups { get; set; } = new List<string>();
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<string>? Groups { get; set; }
     }
 
     public class AdminFile
@@ -55,11 +56,17 @@ public class Admin
 
             foreach (var admin in admins)
             {
-                adminFile.Admins[admin.name!] = new AdminEntry
+                string key = string.IsNullOrWhiteSpace(admin.name) ? admin.steamid.ToString() : admin.name;
+                var flags = string.IsNullOrWhiteSpace(admin.permission) 
+                    ? new List<string>() 
+                    : admin.permission.Split(',').Select(f => f.Trim()).Where(f => !string.IsNullOrEmpty(f)).ToList();
+
+                adminFile.Admins[key] = new AdminEntry
                 {
                     Identity = admin.steamid.ToString(),
                     Immunity = admin.level,
-                    Flags = new List<string> { admin.permission! }
+                    Flags = flags,
+                    Groups = null
                 };
             }
 
@@ -68,6 +75,11 @@ public class Admin
 
             var path = Path.Combine(_plugin.ModuleDirectory, "../../configs/admins.json");
             await File.WriteAllTextAsync(path, jsonString);
+            
+            Server.NextFrame(() =>
+            {
+                Server.ExecuteCommand("css_reloadadmins");
+            });
         }
         catch (Exception ex)
         {
@@ -159,6 +171,45 @@ public class Admin
             caller?.PrintToChat(_plugin.T("admins_reloaded_success"));
             Server.PrintToConsole($"[AdminControlPlugin] {_plugin.T("log_admins_reloaded_success")}");
         });
+    }
+
+    public void ShowOnlineAdminsCommand(CCSPlayerController? caller, CommandInfo info)
+    {
+        var onlineAdmins = Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot && AdminManager.PlayerHasPermissions(p, "@css/generic")).ToList();
+
+        if (caller != null)
+        {
+            caller.PrintToConsole("=== Admins Online ===");
+            if (onlineAdmins.Count == 0)
+            {
+                caller.PrintToConsole("Nenhum admin online no momento.");
+            }
+            else
+            {
+                foreach (var admin in onlineAdmins)
+                {
+                    caller.PrintToConsole($"- {admin.PlayerName}");
+                }
+            }
+            caller.PrintToConsole("=====================");
+            caller.PrintToChat("[AdminControlPlugin] Verifique o seu console para ver a lista de admins online.");
+        }
+        else
+        {
+            Server.PrintToConsole("=== Admins Online ===");
+            if (onlineAdmins.Count == 0)
+            {
+                Server.PrintToConsole("Nenhum admin online no momento.");
+            }
+            else
+            {
+                foreach (var admin in onlineAdmins)
+                {
+                    Server.PrintToConsole($"- {admin.PlayerName}");
+                }
+            }
+            Server.PrintToConsole("=====================");
+        }
     }
 
     [RequiresPermissions("@css/kick")]
